@@ -1,110 +1,91 @@
-import streamlit as st
+# tkinter_model_config.py
+import tkinter as tk
+from tkinter import ttk, messagebox
 
-def main():
-    """
-    Main function to define the Streamlit application UI and logic.
-    """
+# Model limitation items
+model_limitation_items = [
+    "GRID DENSITY",
+    "PEO-CE DIFFERENCE",
+    "DETERMINISTIC IR SPREAD",
+    "SINGLE NAME TO INDEX BASIS",
+    "COMM PARENT CHILD CURVE MAPPING",
+    "CDS CURVE RESHAPING",
+    "IMPLIED VOLATILITY"
+]
 
-    # --- Page Configuration (Optional but good practice) ---
-    st.set_page_config(
-        page_title="Model Configuration",
-        layout="wide" # Can be "centered" or "wide"
-    )
+def submit():
+    cob_date = cob_entry.get()
+    entity = entity_var.get()
 
-    # --- Header ---
-    st.title("Model Configuration Interface")
-    st.markdown("---") # Adds a horizontal line
+    if not cob_date:
+        messagebox.showerror("Missing Input", "Please enter a COB Date.")
+        return
 
-    # --- Top Section: COB Date, Entity, Submit ---
-    col1, col2, col3 = st.columns([2, 2, 1]) # Adjust column ratios as needed
-
-    with col1:
-        cob_date = st.text_input("COB DATE", placeholder="YYYY-MM-DD")
-
-    with col2:
-        entity_options = ["A", "B", "C", "D", "E"] # Add more options if needed
-        entity = st.selectbox("ENTITY", entity_options)
-
-    with col3:
-        # Add some vertical space to align button better if needed
-        st.write("") # Empty write for spacing
-        st.write("") # Empty write for spacing
-        submit_button = st.button("SUBMIT", use_container_width=True)
-
-    st.markdown("---") # Adds a horizontal line
-
-    # --- Model Limitations Section ---
-    st.subheader("MODEL LIMITATIONS")
-
-    # Define the model limitation items
-    model_limitation_items = [
-        "GRID DENSITY",
-        "PEO-CE DIFFERENCE",
-        "DETERMINISTIC IR SPREAD",
-        "SINGLE NAME TO INDEX BASIS",
-        "COMM PARENT CHILD CURVE MAPPING",
-        "CDS CURVE RESHAPING",
-        "IMPLIED VOLATILITY"
-    ]
-
-    # Create columns for "MODEL LIMITATIONS", "RUN", and "AGGREGATE"
-    # The first column is wider to accommodate the limitation names
-    col_limitations_header, col_run_header, col_aggregate_header = st.columns([3,1,1])
-    with col_limitations_header:
-        st.markdown("**Limitation**") # Header for the limitation names
-    with col_run_header:
-        st.markdown("**RUN**")
-    with col_aggregate_header:
-        st.markdown("**AGGREGATE**")
-
-    # Dictionary to store user selections for model limitations
-    limitation_selections = {}
-
-    # Create Yes/No dropdowns for each item
+    results = f"COB Date: {cob_date}\nEntity: {entity}\n\nModel Limitation Selections:\n"
     for item in model_limitation_items:
-        col_item, col_run, col_aggregate = st.columns([3, 1, 1]) # Match header column ratios
-        with col_item:
-            st.markdown(f"`{item}`") # Display the item name, using markdown for emphasis
-        with col_run:
-            run_choice = st.selectbox(
-                f"Run_{item.replace(' ', '_')}", # Unique key for each selectbox
-                options=["Yes", "No"],
-                label_visibility="collapsed" # Hides the label above the selectbox
-            )
-        with col_aggregate:
-            aggregate_choice = st.selectbox(
-                f"Aggregate_{item.replace(' ', '_')}", # Unique key for each selectbox
-                options=["Yes", "No"],
-                label_visibility="collapsed" # Hides the label above the selectbox
-            )
-        limitation_selections[item] = {"RUN": run_choice, "AGGREGATE": aggregate_choice}
+        run_val = limitation_vars[item]['RUN'].get()
+        agg_val = limitation_vars[item]['AGGREGATE'].get()
+        results += f"{item}:\n  - Run: {run_val}\n  - Aggregate: {agg_val}\n"
 
-    st.markdown("---") # Adds a horizontal line
+    messagebox.showinfo("Form Submitted", results)
 
-    # --- Processing Logic (when submit button is pressed) ---
-    if submit_button:
-        st.success("Form Submitted!") # Simple confirmation message
+# Root window
+root = tk.Tk()
+root.title("Model Configuration Interface")
+root.geometry("800x700")
+root.resizable(True, True)
 
-        # Display the collected data (for demonstration)
-        st.write("### Collected Data:")
-        st.write(f"**COB Date:** {cob_date if cob_date else 'Not Provided'}")
-        st.write(f"**Entity:** {entity}")
+# --- COB DATE, ENTITY ---
+title = ttk.Label(root, text="Model Configuration Interface", font=("Arial", 16, "bold"))
+title.pack(pady=10)
 
-        st.write("#### Model Limitation Selections:")
-        for item, selections in limitation_selections.items():
-            st.write(f"**{item}:**")
-            st.write(f"  - Run: {selections['RUN']}")
-            st.write(f"  - Aggregate: {selections['AGGREGATE']}")
+frame_top = ttk.Frame(root)
+frame_top.pack(pady=10, padx=10, fill='x')
 
-        # --- Placeholder for actual code execution ---
-        # Here you would typically call functions or APIs based on the user's input.
-        # For example:
-        # if entity == "A" and cob_date:
-        #     result = run_model_for_entity_a(cob_date, limitation_selections)
-        #     st.write("Model Run Result:", result)
-        # else:
-        #     st.warning("Please provide COB Date and select an Entity.")
-        st.info("Further processing logic would go here.")
+# COB Date
+ttk.Label(frame_top, text="COB DATE").grid(row=0, column=0, padx=10, sticky='w')
+cob_entry = ttk.Entry(frame_top, width=20)
+cob_entry.grid(row=1, column=0, padx=10, sticky='w')
 
-if __name__ == "__main__":
-    main()
+# Entity
+ttk.Label(frame_top, text="ENTITY").grid(row=0, column=1, padx=10, sticky='w')
+entity_options = ["A", "B", "C", "D", "E"]
+entity_var = tk.StringVar(value=entity_options[0])
+entity_menu = ttk.Combobox(frame_top, textvariable=entity_var, values=entity_options, state="readonly")
+entity_menu.grid(row=1, column=1, padx=10, sticky='w')
+
+# Submit button
+submit_btn = ttk.Button(frame_top, text="SUBMIT", command=submit)
+submit_btn.grid(row=1, column=2, padx=20, sticky='w')
+
+# --- Model Limitations ---
+ttktitle = ttk.Label(root, text="MODEL LIMITATIONS", font=("Arial", 12, "bold"))
+ttktitle.pack(pady=5)
+
+header_frame = ttk.Frame(root)
+header_frame.pack(padx=10, fill='x')
+ttk.Label(header_frame, text="Limitation", width=40).grid(row=0, column=0)
+ttk.Label(header_frame, text="RUN", width=10).grid(row=0, column=1)
+ttk.Label(header_frame, text="AGGREGATE", width=10).grid(row=0, column=2)
+
+# Store all select variables
+limitation_vars = {}
+
+# Each item row
+for idx, item in enumerate(model_limitation_items):
+    row_frame = ttk.Frame(root)
+    row_frame.pack(fill='x', padx=10, pady=2)
+    ttk.Label(row_frame, text=item, width=40).grid(row=0, column=0, sticky='w')
+
+    run_var = tk.StringVar(value="No")
+    run_box = ttk.Combobox(row_frame, textvariable=run_var, values=["Yes", "No"], state="readonly", width=8)
+    run_box.grid(row=0, column=1, padx=5)
+
+    agg_var = tk.StringVar(value="No")
+    agg_box = ttk.Combobox(row_frame, textvariable=agg_var, values=["Yes", "No"], state="readonly", width=8)
+    agg_box.grid(row=0, column=2, padx=5)
+
+    limitation_vars[item] = {"RUN": run_var, "AGGREGATE": agg_var}
+
+# Run main loop
+root.mainloop()
