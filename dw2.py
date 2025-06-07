@@ -43,24 +43,44 @@ def process_excel_file(file_path, k_col_index, l_col_index, i_col_index, j_col_i
         # Get column names for the specified indices
         col_names = df.columns.tolist()
         
-        # Create final_rating column
+        # Create final_rating column using if-else logic
         if k_col_index < len(col_names) and l_col_index < len(col_names):
             k_col_name = col_names[k_col_index]
             l_col_name = col_names[l_col_index]
             
-            # Take value from k_col if not null, otherwise from l_col
-            df['final_rating'] = df[k_col_name].fillna(df[l_col_name])
+            # Apply if-else logic: if k_col is null/blank, use l_col, otherwise use k_col
+            def get_final_rating(row):
+                k_value = row[k_col_name]
+                l_value = row[l_col_name]
+                
+                # Check if k_value is null, blank, or empty string
+                if pd.isna(k_value) or k_value == '' or k_value == ' ' or str(k_value).strip() == '':
+                    return l_value
+                else:
+                    return k_value
+            
+            df['final_rating'] = df.apply(get_final_rating, axis=1)
         else:
             print(f"Warning: Column indices {k_col_index} or {l_col_index} out of range for sheet {sheet_name}")
             df['final_rating'] = None
         
-        # Create final_product column
+        # Create final_product column using if-else logic
         if i_col_index < len(col_names) and j_col_index < len(col_names):
             i_col_name = col_names[i_col_index]
             j_col_name = col_names[j_col_index]
             
-            # Take value from i_col if not null, otherwise from j_col
-            df['final_product'] = df[i_col_name].fillna(df[j_col_name])
+            # Apply if-else logic: if i_col is null/blank, use j_col, otherwise use i_col
+            def get_final_product(row):
+                i_value = row[i_col_name]
+                j_value = row[j_col_name]
+                
+                # Check if i_value is null, blank, or empty string
+                if pd.isna(i_value) or i_value == '' or i_value == ' ' or str(i_value).strip() == '':
+                    return j_value
+                else:
+                    return i_value
+            
+            df['final_product'] = df.apply(get_final_product, axis=1)
         else:
             print(f"Warning: Column indices {i_col_index} or {j_col_index} out of range for sheet {sheet_name}")
             df['final_product'] = None
@@ -142,15 +162,35 @@ def process_excel_file_by_names(file_path, k_col_name, l_col_name, i_col_name, j
             
         df['date'] = sheet_name
         
-        # Create final_rating column using column names
+        # Create final_rating column using if-else logic
         if k_col_name in df.columns and l_col_name in df.columns:
-            df['final_rating'] = df[k_col_name].fillna(df[l_col_name])
+            def get_final_rating(row):
+                k_value = row[k_col_name]
+                l_value = row[l_col_name]
+                
+                # Check if k_value is null, blank, or empty string
+                if pd.isna(k_value) or k_value == '' or k_value == ' ' or str(k_value).strip() == '':
+                    return l_value
+                else:
+                    return k_value
+            
+            df['final_rating'] = df.apply(get_final_rating, axis=1)
         else:
             df['final_rating'] = None
             
-        # Create final_product column using column names
+        # Create final_product column using if-else logic
         if i_col_name in df.columns and j_col_name in df.columns:
-            df['final_product'] = df[i_col_name].fillna(df[j_col_name])
+            def get_final_product(row):
+                i_value = row[i_col_name]
+                j_value = row[j_col_name]
+                
+                # Check if i_value is null, blank, or empty string
+                if pd.isna(i_value) or i_value == '' or i_value == ' ' or str(i_value).strip() == '':
+                    return j_value
+                else:
+                    return i_value
+            
+            df['final_product'] = df.apply(get_final_product, axis=1)
         else:
             df['final_product'] = None
             
