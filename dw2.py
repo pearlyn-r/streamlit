@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from openpyxl import load_workbook
 
 def process_excel_file(file_path, k_col_index, l_col_index, i_col_index, j_col_index):
     """
@@ -13,9 +14,9 @@ def process_excel_file(file_path, k_col_index, l_col_index, i_col_index, j_col_i
     - j_col_index: column index for final_product (0-based)
     """
     
-    # Load all sheets from Excel file
-    excel_file = pd.ExcelFile(file_path)
-    sheet_names = excel_file.sheet_names
+    # Load workbook using openpyxl
+    workbook = load_workbook(file_path, read_only=True)
+    sheet_names = workbook.sheetnames
     
     print(f"Found {len(sheet_names)} sheets: {sheet_names}")
     
@@ -26,8 +27,8 @@ def process_excel_file(file_path, k_col_index, l_col_index, i_col_index, j_col_i
     combined_dfs = []
     
     for sheet_name in sheets_to_process:
-        # Load the sheet as DataFrame
-        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        # Load the sheet as DataFrame using openpyxl engine
+        df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
         
         # Add date column with sheet name
         df['date'] = sheet_name
@@ -59,6 +60,9 @@ def process_excel_file(file_path, k_col_index, l_col_index, i_col_index, j_col_i
         
         combined_dfs.append(df)
         print(f"Processed sheet '{sheet_name}' with {len(df)} rows")
+    
+    # Close the workbook
+    workbook.close()
     
     # Combine all DataFrames
     if combined_dfs:
@@ -109,13 +113,13 @@ def process_excel_file_by_names(file_path, k_col_name, l_col_name, i_col_name, j
     """
     Alternative version that uses column names instead of indices.
     """
-    excel_file = pd.ExcelFile(file_path)
-    sheet_names = excel_file.sheet_names[3:]  # Skip first 3 sheets
+    workbook = load_workbook(file_path, read_only=True)
+    sheet_names = workbook.sheetnames[3:]  # Skip first 3 sheets
     
     combined_dfs = []
     
     for sheet_name in sheet_names:
-        df = pd.read_excel(file_path, sheet_name=sheet_name)
+        df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
         df['date'] = sheet_name
         
         # Create final_rating column using column names
@@ -132,4 +136,5 @@ def process_excel_file_by_names(file_path, k_col_name, l_col_name, i_col_name, j
             
         combined_dfs.append(df)
     
+    workbook.close()
     return pd.concat(combined_dfs, ignore_index=True) if combined_dfs else pd.DataFrame()
