@@ -4,7 +4,7 @@ from openpyxl import load_workbook
 
 def process_excel_file(file_path, k_col_index, l_col_index, i_col_index, j_col_index):
     """
-    Process Excel file by combining sheets with additional columns.
+    Process Excel file by combining sheets with additional columns using openpyxl.
     
     Parameters:
     - file_path: path to Excel file
@@ -15,7 +15,7 @@ def process_excel_file(file_path, k_col_index, l_col_index, i_col_index, j_col_i
     """
     
     # Load workbook using openpyxl
-    workbook = load_workbook(file_path, read_only=True)
+    workbook = load_workbook(file_path, read_only=True, data_only=True)
     sheet_names = workbook.sheetnames
     
     print(f"Found {len(sheet_names)} sheets: {sheet_names}")
@@ -27,8 +27,15 @@ def process_excel_file(file_path, k_col_index, l_col_index, i_col_index, j_col_i
     combined_dfs = []
     
     for sheet_name in sheets_to_process:
-        # Load the sheet as DataFrame using openpyxl engine
-        df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
+        # Get the worksheet
+        worksheet = workbook[sheet_name]
+        
+        # Convert worksheet to DataFrame
+        df = worksheet_to_dataframe(worksheet)
+        
+        if df.empty:
+            print(f"Warning: Sheet '{sheet_name}' is empty, skipping...")
+            continue
         
         # Add date column with sheet name
         df['date'] = sheet_name
@@ -73,6 +80,85 @@ def process_excel_file(file_path, k_col_index, l_col_index, i_col_index, j_col_i
         print("No sheets to process")
         return pd.DataFrame()
 
+def worksheet_to_dataframe(worksheet):
+    """
+    Convert openpyxl worksheet to pandas DataFrame.
+    """
+    # Get all data from worksheet
+    data = []
+    for row in worksheet.iter_rows(values_only=True):
+        data.append(row)
+    
+    if not data:
+        return pd.DataFrame()
+    
+    # First row as headers
+    headers = data[0]
+    
+    # Clean headers - remove None values and convert to string
+    cleaned_headers = []
+    for i, header in enumerate(headers):
+        if header is None:
+            cleaned_headers.append(f"Column_{i}")
+        else:
+            cleaned_headers.append(str(header))
+    
+    # Rest of the data
+    rows_data = data[1:]
+    
+    # Create DataFrame
+    df = pd.DataFrame(rows_data, columns=cleaned_headers)
+    
+    # Remove completely empty rows
+    df = df.dropna(how='all')
+    
+    return df
+
+def get_column_by_index(df, col_index):
+    """
+    Safely get column by index.
+    """
+    if col_index < len(df.columns):
+        return df.iloc[:, col_index]
+    else:
+        return pd.Series([None] * len(df))
+
+# Alternative version with column names instead of indices
+def process_excel_file_by_names(file_path, k_col_name, l_col_name, i_col_name, j_col_name):
+    """
+    Alternative version that uses column names instead of indices.
+    """
+    workbook = load_workbook(file_path, read_only=True, data_only=True)
+    sheet_names = workbook.sheetnames[3:]  # Skip first 3 sheets
+    
+    combined_dfs = []
+    
+    for sheet_name in sheet_names:
+        worksheet = workbook[sheet_name]
+        df = worksheet_to_dataframe(worksheet)
+        
+        if df.empty:
+            continue
+            
+        df['date'] = sheet_name
+        
+        # Create final_rating column using column names
+        if k_col_name in df.columns and l_col_name in df.columns:
+            df['final_rating'] = df[k_col_name].fillna(df[l_col_name])
+        else:
+            df['final_rating'] = None
+            
+        # Create final_product column using column names
+        if i_col_name in df.columns and j_col_name in df.columns:
+            df['final_product'] = df[i_col_name].fillna(df[j_col_name])
+        else:
+            df['final_product'] = None
+            
+        combined_dfs.append(df)
+    
+    workbook.close()
+    return pd.concat(combined_dfs, ignore_index=True) if combined_dfs else pd.DataFrame()
+
 # Example usage
 if __name__ == "__main__":
     # CUSTOMIZE THESE PARAMETERS:
@@ -98,9 +184,10 @@ if __name__ == "__main__":
         print("\nFirst 5 rows:")
         print(result_df.head())
         
-        # Save to new Excel file
+        # Save to new Excel file using openpyxl
         output_file = "combined_data.xlsx"
-        result_df.to_excel(output_file, index=False)
+        with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+            result_df.to_excel(writer, sheet_name='Combined_Data', index=False)
         print(f"\nCombined data saved to: {output_file}")
         
     except FileNotFoundError:
@@ -108,33 +195,26 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error processing file: {str(e)}")
 
-# Alternative version with column names instead of indices
-def process_excel_file_by_names(file_path, k_col_name, l_col_name, i_col_name, j_col_name):
+# Additional utility function to inspect Excel file structure
+def inspect_excel_file(file_path):
     """
-    Alternative version that uses column names instead of indices.
+    Utility function to inspect Excel file structure.
     """
     workbook = load_workbook(file_path, read_only=True)
-    sheet_names = workbook.sheetnames[3:]  # Skip first 3 sheets
     
-    combined_dfs = []
+    print(f"Excel file: {file_path}")
+    print(f"Total sheets: {len(workbook.sheetnames)}")
+    print("Sheet names:")
     
-    for sheet_name in sheet_names:
-        df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
-        df['date'] = sheet_name
+    for i, sheet_name in enumerate(workbook.sheetnames):
+        worksheet = workbook[sheet_name]
+        max_row = worksheet.max_row
+        max_col = worksheet.max_column
+        print(f"  {i+1}. '{sheet_name}' - {max_row} rows, {max_col} columns")
         
-        # Create final_rating column using column names
-        if k_col_name in df.columns and l_col_name in df.columns:
-            df['final_rating'] = df[k_col_name].fillna(df[l_col_name])
-        else:
-            df['final_rating'] = None
-            
-        # Create final_product column using column names
-        if i_col_name in df.columns and j_col_name in df.columns:
-            df['final_product'] = df[i_col_name].fillna(df[j_col_name])
-        else:
-            df['final_product'] = None
-            
-        combined_dfs.append(df)
+        # Show first row (headers) if exists
+        if max_row > 0:
+            first_row = [cell.value for cell in worksheet[1]]
+            print(f"     Headers: {first_row[:10]}...")  # Show first 10 headers
     
     workbook.close()
-    return pd.concat(combined_dfs, ignore_index=True) if combined_dfs else pd.DataFrame()
