@@ -1,47 +1,80 @@
 import pandas as pd
 
-# Define thresholds from 5 to 100 with step of 5
-thresholds = list(range(5, 105, 5))
+# Step 1: Map final_rating to simplified category
+def map_rating(rating):
+    rating_str = str(rating).strip().upper()
+    if rating_str.startswith('A'):
+        return 'A'
+    elif rating_str.startswith('B'):
+        return 'B'
+    else:
+        return 'Other'
 
-def generate_pivot_per_date(df, var_col, var_prefix):
-    print(f"\nGenerating pivot for: {var_col}\n{'='*50}")
+# Step 2: Apply rating category
+result_df['rating_category'] = result_df['final_rating'].apply(map_rating)
 
-    df = df.copy()
+# Step 3: Define grouping columns and thresholds
+group_cols = ['date', 'risk_profile', 'limit', 'final_product', 'rating_category']
+thresholds = list(range(5, 105, 5))  # 5 to 100 inclusive
 
-    # Ensure variance column is numeric
-    df[var_col] = pd.to_numeric(df[var_col], errors='coerce')
+# Step 4: Initialize result storage
+final_rows = []
+total_group_size = 0
+group_count = 0
 
-    # Convert 'date' to string (no datetime)
-    df['date'] = df['date'].astype(str)
+print("Starting group processing...\n")
 
-    # Process each unique date
-    for date in df['date'].unique():
-        sub_df = df[df['date'] == date]
-        print(f"\nDate: {date} — Rows: {len(sub_df)}")
+# Step 5: Iterate over each date group
+for date in result_df['date'].unique():
+    sub_df = result_df[result_df['date'] == date]
+    print(f"Processing date: {date}, Rows in date: {len(sub_df)}")
 
-        pivot_data = []
-        grouped = sub_df.groupby(['date', 'risk_profile', 'limit', 'final_product', 'final_rating'], dropna=False)
-        print(f"  Groups found: {len(grouped)}")
+    grouped = sub_df.groupby(group_cols, dropna=False)
 
-        for group_keys, group_df in grouped:
-            row = dict(zip(['date', 'risk_profile', 'limit', 'final_product', 'final_rating'], group_keys))
-            row['group_size'] = len(group_df)
+    for group_keys, group in grouped:
+        group_size = len(group)
+        total_group_size += group_size
+        group_count += 1
 
-            for t in thresholds:
-                count = group_df[group_df[var_col] > t].shape[0]
-                row[f'{var_prefix}_{t}'] = count
+        row = dict(zip(group_cols, group_keys))
+        row['group_size'] = group_size  # Add group size to row
 
-            pivot_data.append(row)
+        print(f"  Group {group_count}: {group_keys} | Size: {group_size}")
 
-        pivot_df = pd.DataFrame(pivot_data)
+        # Check and debug if any variance is missing
+        if group['ce_variance'].isnull().any():
+            print(f"    WARNING: CE variance has missing values in group {group_keys}")
+        if group['pe_variance'].isnull().any():
+            print(f"    WARNING: PE variance has missing values in group {group_keys}")
 
-        # Order columns
-        base_cols = ['date', 'risk_profile', 'limit', 'final_product', 'final_rating', 'group_size']
-        var_cols = [f'{var_prefix}_{t}' for t in thresholds]
-        pivot_df = pivot_df[base_cols + var_cols]
+        # Count CE variance threshold exceedances
+        for t in thresholds:
+            row[f'ce_{t}'] = (group['ce_variance'] > t).sum()
 
-        # Save
-        safe_date = date.replace('/', '-').replace('\\', '-').replace(':', '-')
-        filename = f'pivot_{var_prefix}_{safe_date}.xlsx'
-        pivot_df.to_excel(filename, index=False)
-        print(f"Saved: {filename}")
+        # Count PE variance threshold exceedances
+        for t in thresholds:
+            row[f'pe_{t}'] = (group['pe_variance'] > t).sum()
+
+        final_rows.append(row)
+
+# Step 6: Create final DataFrame
+final_df = pd.DataFrame(final_rows)
+
+# Step 7: Reorder columns
+ce_cols = [f'ce_{t}' for t in thresholds]
+pe_cols = [f'pe_{t}' for t in thresholds]
+ordered_cols = group_cols + ['group_size'] + ce_cols + pe_cols
+final_df = final_df[ordered_cols]
+
+# Step 8: Print summary
+print("\n========== Summary ==========")
+print(f"Total number of groups formed: {group_count}")
+print(f"Total rows across all groups: {total_group_size}")
+print(f"Original total rows in result_df: {len(result_df)}")
+missing_rows = len(result_df) - total_group_size
+print(f"Missing or uncounted rows (should be 0): {missing_rows}")
+
+# Step 9: Export to Excel
+output_file = "merged_ce_pe_variance_summary_debug.xlsx"
+final_df.to_excel(output_file, index=False)
+print(f"\nSaved debug summary to: {output_file}")
