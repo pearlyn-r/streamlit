@@ -1,71 +1,47 @@
 import pandas as pd
 
-# ----- STEP 1: Helper - categorize limit -----
-def categorize_limit(limit):
-    try:
-        val = float(str(limit).replace('K', '').replace(',', '').strip())
-        if val < 50:
-            return '<50K'
-        elif 50 <= val <= 80:
-            return '50K-80K'
-        else:
-            return '>80K'
-    except:
-        return 'Unknown'
+# Define thresholds from 5 to 100 with step of 5
+thresholds = list(range(5, 105, 5))
 
-# ----- STEP 2: Helper - map final_rating -----
-def map_rating(rating):
-    rating_str = str(rating).strip().upper()
-    if rating_str.startswith('A'):
-        return 'A'
-    elif rating_str.startswith('B'):
-        return 'B'
-    else:
-        return 'Other'
+def generate_pivot_per_date(df, var_col, var_prefix):
+    print(f"\nGenerating pivot for: {var_col}\n{'='*50}")
 
-# ----- STEP 3: Prepare dataframe -----
-result_df['limit_category'] = result_df['limit'].apply(categorize_limit)
-result_df['rating_category'] = result_df['final_rating'].apply(map_rating)
+    df = df.copy()
 
-# ----- STEP 4: Define -----
-group_cols = ['date', 'risk_profile', 'limit_category', 'final_product', 'rating_category']
-limit_order = ['<50K', '50K-80K', '>80K']
-thresholds = list(range(5, 105, 5))  # 5 to 100
+    # Ensure variance column is numeric
+    df[var_col] = pd.to_numeric(df[var_col], errors='coerce')
 
-# ----- STEP 5: Compute counts -----
-final_rows = []
+    # Convert 'date' to string (no datetime)
+    df['date'] = df['date'].astype(str)
 
-for date in result_df['date'].dropna().unique():
-    sub_df = result_df[result_df['date'] == date]
-    grouped = sub_df.groupby(group_cols)
+    # Process each unique date
+    for date in df['date'].unique():
+        sub_df = df[df['date'] == date]
+        print(f"\nDate: {date} — Rows: {len(sub_df)}")
 
-    for group_keys, group in grouped:
-        row = dict(zip(group_cols, group_keys))
+        pivot_data = []
+        grouped = sub_df.groupby(['date', 'risk_profile', 'limit', 'final_product', 'final_rating'], dropna=False)
+        print(f"  Groups found: {len(grouped)}")
 
-        # Count CE thresholds
-        for t in thresholds:
-            row[f'ce_{t}'] = group[group['ce_variance'] > t].shape[0]
+        for group_keys, group_df in grouped:
+            row = dict(zip(['date', 'risk_profile', 'limit', 'final_product', 'final_rating'], group_keys))
+            row['group_size'] = len(group_df)
 
-        # Count PE thresholds
-        for t in thresholds:
-            row[f'pe_{t}'] = group[group['pe_variance'] > t].shape[0]
+            for t in thresholds:
+                count = group_df[group_df[var_col] > t].shape[0]
+                row[f'{var_prefix}_{t}'] = count
 
-        final_rows.append(row)
+            pivot_data.append(row)
 
-# ----- STEP 6: Create DataFrame and format -----
-final_df = pd.DataFrame(final_rows)
+        pivot_df = pd.DataFrame(pivot_data)
 
-# Optional: Sort & order columns
-final_df['limit_category'] = pd.Categorical(final_df['limit_category'], categories=limit_order, ordered=True)
-final_df = final_df.sort_values(['date', 'risk_profile', 'limit_category', 'final_product', 'rating_category'])
+        # Order columns
+        base_cols = ['date', 'risk_profile', 'limit', 'final_product', 'final_rating', 'group_size']
+        var_cols = [f'{var_prefix}_{t}' for t in thresholds]
+        pivot_df = pivot_df[base_cols + var_cols]
 
-# Column ordering
-ce_cols = [f'ce_{t}' for t in thresholds]
-pe_cols = [f'pe_{t}' for t in thresholds]
-ordered_cols = group_cols + ce_cols + pe_cols
-final_df = final_df[ordered_cols]
-
-# ----- STEP 7: Save result -----
-output_file = "merged_ce_pe_variance_summary.xlsx"
-final_df.to_excel(output_file, index=False)
-print(f"Saved merged summary to: {output_file}")
+        # Save
+        safe_date = date.replace('/', '-').replace('\\', '-').replace(':', '-')
+        filename = f'pivot_{var_prefix}_{safe_date}.xlsx'
+        pivot_df.to_excel(filename, index=False)
+        print(f"Saved: {filename}")
