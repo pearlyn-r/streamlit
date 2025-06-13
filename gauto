@@ -4,23 +4,32 @@ from datetime import datetime
 import openpyxl
 from openpyxl.utils.dataframe import dataframe_to_rows
 import shutil
+import chardet
 
 def get_all_csv_files(folder_path):
     return [f for f in os.listdir(folder_path) if f.endswith('.csv')]
 
+def detect_encoding(file_path):
+    with open(file_path, 'rb') as f:
+        raw = f.read(10000)
+        result = chardet.detect(raw)
+        return result['encoding']
+
 def read_csv_with_encoding(file_path):
     try:
-        df = pd.read_csv(file_path, encoding='utf-16-be', header=None)
-        print(f"Read {file_path} with utf-16-be")
+        encoding = detect_encoding(file_path)
+        print(f"Detected encoding: {encoding}")
+        df = pd.read_csv(file_path, encoding=encoding, delimiter=',', header=None, on_bad_lines='skip')
+
+        if len(df) <= 2:
+            raise ValueError("Too few rows after reading")
+
         df.drop(index=0, inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        if len(df) < 2:
-            raise ValueError("Not enough rows after dropping first row")
-
         headers = df.iloc[1, 0:9].tolist()
         df = df.iloc[2:]
-        df.columns = headers + list(df.columns[len(headers):])  # if more columns exist
+        df.columns = headers + list(df.columns[len(headers):])
         df.reset_index(drop=True, inplace=True)
         return df
     except Exception as e:
@@ -30,7 +39,7 @@ def read_csv_with_encoding(file_path):
 def extract_date_from_dataframe(df):
     try:
         if df is not None and len(df.columns) > 9 and len(df) > 1:
-            value = df.iloc[1, 9]  # 2nd row, 10th column (index 9)
+            value = df.iloc[1, 9]
             if pd.notnull(value):
                 try:
                     return datetime.strptime(str(value), "%m/%d/%Y")
@@ -108,159 +117,6 @@ def process_files(folder_path, template_path):
                     sheet1.cell(row=row_idx, column=col_idx, value=value)
 
             refresh_pivot_table(wb, 'Sheet2')
-            wb.save(summary_path)
-            wb.close()
-
-            print(f"Summary saved: {summary_filename}")
-
-        except Exception as e:
-            print(f"Failed to create summary for {new_filename}: {e}")
-
-def main():
-    folder_path = input("Enter the folder path containing CSV files: ").strip()
-    template_path = input("Enter the path to the template Excel file: ").strip()
-
-    if not os.path.exists(folder_path):
-        print(f"Folder path does not exist: {folder_path}")
-        return
-
-    if not os.path.exists(template_path):
-        print(f"Template file does not exist: {template_path}")
-        return
-
-    process_files(folder_path, template_path)
-    print("Processing completed!")
-
-if __name__ == "__main__":
-    main()
-import os
-import pandas as pd
-from datetime import datetime
-import openpyxl
-from openpyxl.utils.dataframe import dataframe_to_rows
-import shutil
-
-def get_all_csv_files(folder_path):
-    return [f for f in os.listdir(folder_path) if f.endswith('.csv')]
-
-def read_csv_with_encoding(file_path):
-    """Read CSV with encoding detection, return DataFrame and encoding"""
-    encodings_to_try = ['utf-8', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1', 'cp1252', 'iso-8859-1']
-    try:
-        import chardet
-        with open(file_path, 'rb') as f:
-            raw_data = f.read(10000)
-            detected_encoding = chardet.detect(raw_data)['encoding']
-            if detected_encoding:
-                encodings_to_try.insert(0, detected_encoding)
-    except:
-        pass
-
-    for encoding in encodings_to_try:
-        try:
-            df = pd.read_csv(file_path, encoding=encoding, header=1)  # Skip first row, second row is header
-            print(f"\nLoaded CSV: {file_path}")
-            print(f"Encoding used: {encoding}")
-            print(f"Shape: {df.shape}")
-            print(f"Columns: {list(df.columns)}")
-            print(df.head())
-            return df, encoding
-        except Exception as e:
-            continue
-
-    print(f"Failed to read CSV: {file_path}")
-    return None, None
-
-def extract_date_from_dataframe(df):
-    """Extract date from column J (index 9) of first row"""
-    try:
-        if df is not None and not df.empty and len(df.columns) > 9:
-            value = df.iloc[0, 9]
-            if pd.notnull(value):
-                try:
-                    return datetime.strptime(str(value), "%m/%d/%Y")
-                except:
-                    return pd.to_datetime(value).to_pydatetime()
-    except Exception as e:
-        print(f"Date parsing failed: {e}")
-    return None
-
-def extract_data(df):
-    """Extract columns A, B, E, G, N (0,1,4,6,13)"""
-    try:
-        selected = df.iloc[:, [0, 1, 4, 6, 13]].copy()
-        selected.columns = ['A', 'B', 'E', 'G', 'N']
-        selected.dropna(how='all', inplace=True)
-        return selected
-    except Exception as e:
-        print(f"Error extracting data: {e}")
-        return None
-
-def refresh_pivot_table(workbook, sheet_name='Sheet2'):
-    try:
-        worksheet = workbook[sheet_name]
-        for pivot_table in worksheet._pivots:
-            pivot_table.cache.refreshOnLoad = True
-        print(f"Pivot table in {sheet_name} marked for refresh")
-    except Exception as e:
-        print(f"Error refreshing pivot table: {e}")
-
-def process_files(folder_path, template_path):
-    csv_files = get_all_csv_files(folder_path)
-
-    if not csv_files:
-        print("No CSV files found.")
-        return
-
-    for filename in csv_files:
-        file_path = os.path.join(folder_path, filename)
-        df, encoding = read_csv_with_encoding(file_path)
-
-        if df is None:
-            continue
-
-        file_date = extract_date_from_dataframe(df)
-
-        if not file_date:
-            print(f"Date not found or invalid in: {filename}")
-            continue
-
-        new_filename = f"file_{file_date.strftime('%Y%m%d')}.csv"
-        new_file_path = os.path.join(folder_path, new_filename)
-
-        try:
-            os.rename(file_path, new_file_path)
-            print(f"Renamed: {filename} -> {new_filename}")
-        except Exception as e:
-            print(f"Rename failed: {e}")
-            continue
-
-        extracted_data = extract_data(df)
-
-        if extracted_data is None or extracted_data.empty:
-            print(f"No valid data in {new_filename}")
-            continue
-
-        summary_filename = f"summary_{file_date.strftime('%Y%m%d')}.xlsx"
-        summary_path = os.path.join(folder_path, summary_filename)
-
-        try:
-            shutil.copy2(template_path, summary_path)
-            wb = openpyxl.load_workbook(summary_path)
-
-            sheet1 = wb['Sheet1']
-            sheet1.delete_rows(1, sheet1.max_row)
-
-            headers = ['A', 'B', 'E', 'G', 'N']
-            for col_idx, header in enumerate(headers, 1):
-                sheet1.cell(row=1, column=col_idx, value=header)
-
-            for row_idx, row in enumerate(dataframe_to_rows(extracted_data, index=False, header=False), 2):
-                for col_idx, value in enumerate(row, 1):
-                    sheet1.cell(row=row_idx, column=col_idx, value=value)
-
-            refresh_pivot_table(wb, 'Sheet2')
-
             wb.save(summary_path)
             wb.close()
 
