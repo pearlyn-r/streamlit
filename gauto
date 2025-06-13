@@ -1,0 +1,200 @@
+import os
+import pandas as pd
+from datetime import datetime, timedelta
+import openpyxl
+from openpyxl.utils.dataframe import dataframe_to_rows
+import shutil
+
+def get_date_range(start_date_str, end_date_str):
+    """Convert date strings to datetime objects and return date range"""
+    try:
+        start_date = datetime.strptime(start_date_str, "%m/%d/%Y")
+        end_date = datetime.strptime(end_date_str, "%m/%d/%Y")
+        return start_date, end_date
+    except ValueError as e:
+        print(f"Error parsing dates: {e}")
+        return None, None
+
+def count_days(start_date, end_date):
+    """Count number of days between start and end date"""
+    if start_date and end_date:
+        return (end_date - start_date).days + 1
+    return 0
+
+def get_date_from_excel(file_path):
+    """Extract date from cell J2 in Excel file"""
+    try:
+        wb = openpyxl.load_workbook(file_path, data_only=True)
+        ws = wb.active
+        date_value = ws['J2'].value
+        wb.close()
+        
+        if isinstance(date_value, datetime):
+            return date_value
+        elif isinstance(date_value, str):
+            # Try to parse string date in M/D/YYYY format
+            return datetime.strptime(date_value, "%m/%d/%Y")
+        else:
+            print(f"Could not parse date from {file_path}, cell J2: {date_value}")
+            return None
+    except Exception as e:
+        print(f"Error reading date from {file_path}: {e}")
+        return None
+
+def rename_excel_files(folder_path, start_date, end_date):
+    """Rename Excel files based on date in J2 cell"""
+    renamed_files = []
+    
+    for filename in os.listdir(folder_path):
+        if filename.endswith(('.xlsx', '.xls')):
+            file_path = os.path.join(folder_path, filename)
+            
+            # Get date from J2 cell
+            file_date = get_date_from_excel(file_path)
+            
+            if file_date and start_date <= file_date <= end_date:
+                # Format new filename as file_yyyymmdd.xlsx
+                new_filename = f"file_{file_date.strftime('%Y%m%d')}.xlsx"
+                new_file_path = os.path.join(folder_path, new_filename)
+                
+                # Rename the file
+                try:
+                    os.rename(file_path, new_file_path)
+                    renamed_files.append((new_file_path, file_date))
+                    print(f"Renamed: {filename} -> {new_filename}")
+                except Exception as e:
+                    print(f"Error renaming {filename}: {e}")
+            else:
+                if file_date:
+                    print(f"File {filename} date {file_date.strftime('%Y-%m-%d')} is outside the specified range")
+                else:
+                    print(f"Could not process {filename} - no valid date found")
+    
+    return renamed_files
+
+def extract_data_from_excel(file_path):
+    """Extract data from columns A, B, E, G, N starting from row 3"""
+    try:
+        # Read Excel file, skip first 2 rows (start from row 3)
+        df = pd.read_excel(file_path, usecols=[0, 1, 4, 6, 13], skiprows=2)
+        # Rename columns to match A, B, E, G, N
+        df.columns = ['A', 'B', 'E', 'G', 'N']
+        return df
+    except Exception as e:
+        print(f"Error extracting data from {file_path}: {e}")
+        return None
+
+def refresh_pivot_table(workbook, sheet_name='Sheet2'):
+    """Refresh pivot table in specified sheet"""
+    try:
+        worksheet = workbook[sheet_name]
+        # Get all pivot tables in the worksheet
+        for pivot_table in worksheet._pivots:
+            pivot_table.cache.refreshOnLoad = True
+        print(f"Pivot table in {sheet_name} marked for refresh")
+    except Exception as e:
+        print(f"Error refreshing pivot table: {e}")
+
+def process_files(folder_path, template_path, start_date_str, end_date_str):
+    """Main function to process all files"""
+    
+    # Parse dates and count days
+    start_date, end_date = get_date_range(start_date_str, end_date_str)
+    if not start_date or not end_date:
+        print("Invalid date format. Please use MM/DD/YYYY format.")
+        return
+    
+    days_count = count_days(start_date, end_date)
+    print(f"Processing files from {start_date_str} to {end_date_str} ({days_count} days)")
+    
+    # Rename files based on date in J2
+    renamed_files = rename_excel_files(folder_path, start_date, end_date)
+    
+    if not renamed_files:
+        print("No files found in the date range or no files to process.")
+        return
+    
+    # Process each renamed file
+    for file_path, file_date in renamed_files:
+        print(f"\nProcessing: {os.path.basename(file_path)}")
+        
+        # Extract data from columns A, B, E, G, N
+        extracted_data = extract_data_from_excel(file_path)
+        
+        if extracted_data is None or extracted_data.empty:
+            print(f"No data extracted from {file_path}")
+            continue
+        
+        # Create a copy of the template file
+        date_str = file_date.strftime('%Y%m%d')
+        summary_filename = f"summary_{date_str}.xlsx"
+        summary_path = os.path.join(folder_path, summary_filename)
+        
+        try:
+            # Copy template file
+            shutil.copy2(template_path, summary_path)
+            
+            # Load the workbook
+            wb = openpyxl.load_workbook(summary_path)
+            
+            # Clear existing data in Sheet1 and paste new data
+            sheet1 = wb['Sheet1']
+            
+            # Clear all data in Sheet1
+            sheet1.delete_rows(1, sheet1.max_row)
+            
+            # Add column headers
+            headers = ['A', 'B', 'E', 'G', 'N']
+            for col_idx, header in enumerate(headers, 1):
+                sheet1.cell(row=1, column=col_idx, value=header)
+            
+            # Add extracted data
+            for row_idx, row in enumerate(dataframe_to_rows(extracted_data, index=False, header=False), 2):
+                for col_idx, value in enumerate(row, 1):
+                    sheet1.cell(row=row_idx, column=col_idx, value=value)
+            
+            print(f"Data pasted to Sheet1: {len(extracted_data)} rows")
+            
+            # Select all data in Sheet1 before refreshing pivot table
+            max_row = sheet1.max_row
+            max_col = sheet1.max_column
+            data_range = f"A1:{openpyxl.utils.get_column_letter(max_col)}{max_row}"
+            
+            # Refresh pivot table in Sheet2
+            refresh_pivot_table(wb, 'Sheet2')
+            
+            # Save the file
+            wb.save(summary_path)
+            wb.close()
+            
+            print(f"Summary file created: {summary_filename}")
+            
+        except Exception as e:
+            print(f"Error creating summary file for {file_path}: {e}")
+
+def main():
+    """Main execution function"""
+    
+    # Get user inputs
+    folder_path = input("Enter the folder path containing Excel files: ").strip()
+    template_path = input("Enter the path to the template file: ").strip()
+    start_date = input("Enter start date (MM/DD/YYYY): ").strip()
+    end_date = input("Enter end date (MM/DD/YYYY): ").strip()
+    
+    # Validate folder path
+    if not os.path.exists(folder_path):
+        print(f"Folder path does not exist: {folder_path}")
+        return
+    
+    # Validate template path
+    if not os.path.exists(template_path):
+        print(f"Template file does not exist: {template_path}")
+        return
+    
+    # Process files
+    process_files(folder_path, template_path, start_date, end_date)
+    
+    print("\nProcessing completed!")
+
+if __name__ == "__main__":
+    main()
