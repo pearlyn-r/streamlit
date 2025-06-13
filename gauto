@@ -6,11 +6,10 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 import shutil
 
 def get_all_csv_files(folder_path):
-    """Get all CSV files in the folder"""
     return [f for f in os.listdir(folder_path) if f.endswith('.csv')]
 
 def read_csv_with_encoding(file_path):
-    """Read CSV file with encoding detection"""
+    """Read CSV with encoding detection, return DataFrame and encoding"""
     encodings_to_try = ['utf-8', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1', 'cp1252', 'iso-8859-1']
     try:
         import chardet
@@ -24,99 +23,45 @@ def read_csv_with_encoding(file_path):
 
     for encoding in encodings_to_try:
         try:
-            df = pd.read_csv(file_path, encoding=encoding)
-            return df
-        except:
+            df = pd.read_csv(file_path, encoding=encoding, header=1)  # Skip first row, second row is header
+            print(f"\nLoaded CSV: {file_path}")
+            print(f"Encoding used: {encoding}")
+            print(f"Shape: {df.shape}")
+            print(f"Columns: {list(df.columns)}")
+            print(df.head())
+            return df, encoding
+        except Exception as e:
             continue
 
+    print(f"Failed to read CSV: {file_path}")
+    return None, None
+
+def extract_date_from_dataframe(df):
+    """Extract date from column J (index 9) of first row"""
     try:
-        df = pd.read_csv(file_path, encoding='utf-8', errors='ignore')
-        return df
-    except:
-        return None
-
-def get_date_from_csv(file_path):
-    """Extract date from cell J2 (row 2, col 10)"""
-    try:
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            lines = f.readlines()
-
-        if len(lines) < 2:
-            print(f"{file_path} doesn't have enough rows")
-            return None
-
-        second_row = lines[1].strip().split(',')
-        if len(second_row) < 10:
-            print(f"{file_path} doesn't have column J in second row")
-            return None
-
-        date_value = second_row[9].strip()
-
-        if not date_value:
-            return None
-
-        try:
-            return datetime.strptime(date_value, "%m/%d/%Y")
-        except ValueError:
-            try:
-                return pd.to_datetime(date_value).to_pydatetime()
-            except:
-                return None
-
-    except Exception as e:
-        print(f"Error reading date from {file_path}: {e}")
-        return None
-
-def rename_csv_files(folder_path):
-    """Rename CSV files based on date in J2 cell"""
-    renamed_files = []
-
-    for filename in os.listdir(folder_path):
-        if filename.endswith('.csv'):
-            file_path = os.path.join(folder_path, filename)
-            file_date = get_date_from_csv(file_path)
-
-            if file_date:
-                new_filename = f"file_{file_date.strftime('%Y%m%d')}.csv"
-                new_file_path = os.path.join(folder_path, new_filename)
-
+        if df is not None and not df.empty and len(df.columns) > 9:
+            value = df.iloc[0, 9]
+            if pd.notnull(value):
                 try:
-                    os.rename(file_path, new_file_path)
-                    renamed_files.append((new_file_path, file_date))
-                    print(f"Renamed: {filename} -> {new_filename}")
-                except Exception as e:
-                    print(f"Error renaming {filename}: {e}")
-            else:
-                print(f"No valid date in {filename}")
+                    return datetime.strptime(str(value), "%m/%d/%Y")
+                except:
+                    return pd.to_datetime(value).to_pydatetime()
+    except Exception as e:
+        print(f"Date parsing failed: {e}")
+    return None
 
-    return renamed_files
-
-def extract_data_from_csv(file_path):
-    """Extract data from columns A, B, E, G, N starting from row 3"""
+def extract_data(df):
+    """Extract columns A, B, E, G, N (0,1,4,6,13)"""
     try:
-        df = pd.read_csv(file_path, encoding='utf-8', header=1)
-
-        if df is None or df.empty:
-            print(f"No data in {file_path}")
-            return None
-
-        if len(df.columns) < 14:
-            print(f"Not enough columns in {file_path}")
-            return None
-
-        # Select columns by index (0, 1, 4, 6, 13)
         selected = df.iloc[:, [0, 1, 4, 6, 13]].copy()
         selected.columns = ['A', 'B', 'E', 'G', 'N']
         selected.dropna(how='all', inplace=True)
-
         return selected
-
     except Exception as e:
-        print(f"Error extracting data from {file_path}: {e}")
+        print(f"Error extracting data: {e}")
         return None
 
 def refresh_pivot_table(workbook, sheet_name='Sheet2'):
-    """Refresh pivot table in specified sheet"""
     try:
         worksheet = workbook[sheet_name]
         for pivot_table in worksheet._pivots:
@@ -126,31 +71,42 @@ def refresh_pivot_table(workbook, sheet_name='Sheet2'):
         print(f"Error refreshing pivot table: {e}")
 
 def process_files(folder_path, template_path):
-    """Main function to process all files"""
     csv_files = get_all_csv_files(folder_path)
 
     if not csv_files:
         print("No CSV files found.")
         return
 
-    print(f"Found {len(csv_files)} CSV files.")
-    renamed_files = rename_csv_files(folder_path)
+    for filename in csv_files:
+        file_path = os.path.join(folder_path, filename)
+        df, encoding = read_csv_with_encoding(file_path)
 
-    if not renamed_files:
-        print("No files were renamed due to missing/invalid dates.")
-        return
-
-    for file_path, file_date in renamed_files:
-        print(f"Processing: {os.path.basename(file_path)}")
-
-        extracted_data = extract_data_from_csv(file_path)
-
-        if extracted_data is None or extracted_data.empty:
-            print(f"No valid data in {file_path}")
+        if df is None:
             continue
 
-        date_str = file_date.strftime('%Y%m%d')
-        summary_filename = f"summary_{date_str}.xlsx"
+        file_date = extract_date_from_dataframe(df)
+
+        if not file_date:
+            print(f"Date not found or invalid in: {filename}")
+            continue
+
+        new_filename = f"file_{file_date.strftime('%Y%m%d')}.csv"
+        new_file_path = os.path.join(folder_path, new_filename)
+
+        try:
+            os.rename(file_path, new_file_path)
+            print(f"Renamed: {filename} -> {new_filename}")
+        except Exception as e:
+            print(f"Rename failed: {e}")
+            continue
+
+        extracted_data = extract_data(df)
+
+        if extracted_data is None or extracted_data.empty:
+            print(f"No valid data in {new_filename}")
+            continue
+
+        summary_filename = f"summary_{file_date.strftime('%Y%m%d')}.xlsx"
         summary_path = os.path.join(folder_path, summary_filename)
 
         try:
@@ -176,7 +132,7 @@ def process_files(folder_path, template_path):
             print(f"Summary saved: {summary_filename}")
 
         except Exception as e:
-            print(f"Failed to create summary for {file_path}: {e}")
+            print(f"Failed to create summary for {new_filename}: {e}")
 
 def main():
     folder_path = input("Enter the folder path containing CSV files: ").strip()
