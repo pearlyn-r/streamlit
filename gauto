@@ -56,6 +56,8 @@ def read_csv_with_encoding(file_path):
 def extract_date_from_dataframe(df):
     try:
         if df is not None and df.shape[1] > 9:
+            print("First row of DataFrame:")
+            print(df.iloc[0])
             value = df.iloc[0, 9]
             print(f"Extracting date from value: {value}")
             if pd.notnull(value):
@@ -113,9 +115,7 @@ def process_files(folder_path, template_path):
         if df is None:
             continue
 
-        print("
-=== Full DataFrame preview before renaming ===")
-        print(df.head(10))
+        
 
         file_date = extract_date_from_dataframe(df)
         if not file_date:
