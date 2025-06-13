@@ -5,48 +5,74 @@ import openpyxl
 from openpyxl.utils.dataframe import dataframe_to_rows
 import shutil
 
-def get_all_excel_files(folder_path):
-    """Get all Excel files in the folder"""
-    excel_files = []
+def get_all_csv_files(folder_path):
+    """Get all CSV files in the folder"""
+    csv_files = []
     for filename in os.listdir(folder_path):
-        if filename.endswith(('.xlsx', '.xls')):
-            excel_files.append(filename)
-    return excel_files
+        if filename.endswith('.csv'):
+            csv_files.append(filename)
+    return csv_files
 
-def get_date_from_excel(file_path):
-    """Extract date from cell J2 in Excel file"""
+def get_date_from_csv(file_path):
+    """Extract date from cell J2 (column J, row 2) in CSV file"""
     try:
-        wb = openpyxl.load_workbook(file_path, data_only=True)
-        ws = wb.active
-        date_value = ws['J2'].value
-        wb.close()
+        # Read CSV file
+        df = pd.read_csv(file_path)
         
-        if isinstance(date_value, datetime):
-            return date_value
-        elif isinstance(date_value, str):
-            # Try to parse string date in M/D/YYYY format
-            return datetime.strptime(date_value, "%m/%d/%Y")
-        else:
-            print(f"Could not parse date from {file_path}, cell J2: {date_value}")
+        # Check if we have at least 10 columns (J is the 10th column, index 9)
+        if len(df.columns) < 10:
+            print(f"CSV file {file_path} doesn't have column J")
             return None
+        
+        # Check if we have at least 2 rows (index 1 for row 2)
+        if len(df) < 2:
+            print(f"CSV file {file_path} doesn't have row 2")
+            return None
+        
+        # Get value from J2 (column index 9, row index 1)
+        date_value = df.iloc[1, 9]  # Row 2, Column J
+        
+        if pd.isna(date_value):
+            print(f"No date found in J2 of {file_path}")
+            return None
+        
+        # Try to parse the date
+        if isinstance(date_value, str):
+            try:
+                return datetime.strptime(date_value, "%m/%d/%Y")
+            except ValueError:
+                # Try other common date formats
+                try:
+                    return pd.to_datetime(date_value).to_pydatetime()
+                except:
+                    print(f"Could not parse date '{date_value}' from {file_path}")
+                    return None
+        else:
+            # If it's already a datetime-like object
+            try:
+                return pd.to_datetime(date_value).to_pydatetime()
+            except:
+                print(f"Could not parse date '{date_value}' from {file_path}")
+                return None
+                
     except Exception as e:
         print(f"Error reading date from {file_path}: {e}")
         return None
 
-def rename_excel_files(folder_path):
-    """Rename Excel files based on date in J2 cell"""
+def rename_csv_files(folder_path):
+    """Rename CSV files based on date in J2 cell"""
     renamed_files = []
     
     for filename in os.listdir(folder_path):
-        if filename.endswith(('.xlsx', '.xls')):
+        if filename.endswith('.csv'):
             file_path = os.path.join(folder_path, filename)
             
             # Get date from J2 cell
-            file_date = get_date_from_excel(file_path)
+            file_date = get_date_from_csv(file_path)
             
             if file_date:
-                # Format new filename as file_yyyymmdd.xlsx
-                new_filename = f"file_{file_date.strftime('%Y%m%d')}.xlsx"
+                # Format new filename as file_yyyymmdd.csv
+                new_filename = f"file_{file_date.strftime('%Y%m%d')}.csv"
                 new_file_path = os.path.join(folder_path, new_filename)
                 
                 # Rename the file
@@ -61,14 +87,27 @@ def rename_excel_files(folder_path):
     
     return renamed_files
 
-def extract_data_from_excel(file_path):
+def extract_data_from_csv(file_path):
     """Extract data from columns A, B, E, G, N starting from row 3"""
     try:
-        # Read Excel file, skip first 2 rows (start from row 3)
-        df = pd.read_excel(file_path, usecols=[0, 1, 4, 6, 13], skiprows=2)
+        # Read CSV file, skip first 2 rows (start from row 3)
+        df = pd.read_csv(file_path, skiprows=2)
+        
+        # Check if we have enough columns
+        if len(df.columns) < 14:  # N is the 14th column (index 13)
+            print(f"CSV file {file_path} doesn't have enough columns")
+            return None
+        
+        # Extract columns A, B, E, G, N (indices 0, 1, 4, 6, 13)
+        selected_columns = df.iloc[:, [0, 1, 4, 6, 13]].copy()
+        
         # Rename columns to match A, B, E, G, N
-        df.columns = ['A', 'B', 'E', 'G', 'N']
-        return df
+        selected_columns.columns = ['A', 'B', 'E', 'G', 'N']
+        
+        # Remove any completely empty rows
+        selected_columns = selected_columns.dropna(how='all')
+        
+        return selected_columns
     except Exception as e:
         print(f"Error extracting data from {file_path}: {e}")
         return None
@@ -87,21 +126,21 @@ def refresh_pivot_table(workbook, sheet_name='Sheet2'):
 def process_files(folder_path, template_path):
     """Main function to process all files"""
     
-    # Get all Excel files in the folder
-    excel_files = get_all_excel_files(folder_path)
+    # Get all CSV files in the folder
+    csv_files = get_all_csv_files(folder_path)
     
-    print(f"Found {len(excel_files)} Excel files in the folder:")
-    for i, filename in enumerate(excel_files, 1):
+    print(f"Found {len(csv_files)} CSV files in the folder:")
+    for i, filename in enumerate(csv_files, 1):
         print(f"{i}. {filename}")
     
-    if not excel_files:
-        print("No Excel files found in the folder.")
+    if not csv_files:
+        print("No CSV files found in the folder.")
         return
     
-    print(f"\nProcessing {len(excel_files)} files...")
+    print(f"\nProcessing {len(csv_files)} files...")
     
     # Rename files based on date in J2
-    renamed_files = rename_excel_files(folder_path)
+    renamed_files = rename_csv_files(folder_path)
     
     if not renamed_files:
         print("No files could be processed (no valid dates found).")
@@ -112,7 +151,7 @@ def process_files(folder_path, template_path):
         print(f"\nProcessing: {os.path.basename(file_path)}")
         
         # Extract data from columns A, B, E, G, N
-        extracted_data = extract_data_from_excel(file_path)
+        extracted_data = extract_data_from_csv(file_path)
         
         if extracted_data is None or extracted_data.empty:
             print(f"No data extracted from {file_path}")
@@ -169,8 +208,8 @@ def main():
     """Main execution function"""
     
     # Get user inputs
-    folder_path = input("Enter the folder path containing Excel files: ").strip()
-    template_path = input("Enter the path to the template file: ").strip()
+    folder_path = input("Enter the folder path containing CSV files: ").strip()
+    template_path = input("Enter the path to the template Excel file: ").strip()
     
     # Validate folder path
     if not os.path.exists(folder_path):
