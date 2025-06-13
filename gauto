@@ -85,6 +85,8 @@ def rename_file_with_date(file_path, folder_path, file_date):
         return None, None
 
 def process_files(folder_path, template_path):
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
     csv_files = get_all_csv_files(folder_path)
     if not csv_files:
         print("No CSV files found.")
@@ -96,6 +98,10 @@ def process_files(folder_path, template_path):
 
         if df is None:
             continue
+
+        print("
+Full DataFrame before renaming:")
+        print(df.head(10))
 
         file_date = extract_date_from_dataframe(df)
         if not file_date:
