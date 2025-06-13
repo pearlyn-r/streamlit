@@ -13,11 +13,54 @@ def get_all_csv_files(folder_path):
             csv_files.append(filename)
     return csv_files
 
+def detect_encoding(file_path):
+    """Detect the encoding of a file"""
+    import chardet
+    with open(file_path, 'rb') as f:
+        raw_data = f.read(10000)  # Read first 10KB
+        result = chardet.detect(raw_data)
+        return result['encoding']
+
+def read_csv_with_encoding(file_path):
+    """Read CSV file with automatic encoding detection"""
+    encodings_to_try = ['utf-8', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1', 'cp1252', 'iso-8859-1']
+    
+    # First try to detect encoding
+    try:
+        detected_encoding = detect_encoding(file_path)
+        if detected_encoding:
+            encodings_to_try.insert(0, detected_encoding)
+    except:
+        pass
+    
+    # Try different encodings
+    for encoding in encodings_to_try:
+        try:
+            df = pd.read_csv(file_path, encoding=encoding)
+            print(f"Successfully read {file_path} with encoding: {encoding}")
+            return df
+        except UnicodeDecodeError:
+            continue
+        except Exception as e:
+            print(f"Error reading {file_path} with encoding {encoding}: {e}")
+            continue
+    
+    # If all encodings fail, try with errors='ignore'
+    try:
+        df = pd.read_csv(file_path, encoding='utf-8', errors='ignore')
+        print(f"Read {file_path} with UTF-8 and ignored errors")
+        return df
+    except Exception as e:
+        print(f"Failed to read {file_path} with any encoding: {e}")
+        return None
 def get_date_from_csv(file_path):
     """Extract date from cell J2 (column J, row 2) in CSV file"""
     try:
-        # Read CSV file
-        df = pd.read_csv(file_path)
+        # Read CSV file with encoding detection
+        df = read_csv_with_encoding(file_path)
+        
+        if df is None:
+            return None
         
         # Check if we have at least 10 columns (J is the 10th column, index 9)
         if len(df.columns) < 10:
@@ -90,8 +133,14 @@ def rename_csv_files(folder_path):
 def extract_data_from_csv(file_path):
     """Extract data from columns A, B, E, G, N starting from row 3"""
     try:
-        # Read CSV file, skip first 2 rows (start from row 3)
-        df = pd.read_csv(file_path, skiprows=2)
+        # Read CSV file with encoding detection, skip first 2 rows (start from row 3)
+        df = read_csv_with_encoding(file_path)
+        
+        if df is None:
+            return None
+        
+        # Skip first 2 rows
+        df = df.iloc[2:].reset_index(drop=True)
         
         # Check if we have enough columns
         if len(df.columns) < 14:  # N is the 14th column (index 13)
