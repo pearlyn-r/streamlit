@@ -5,21 +5,13 @@ import openpyxl
 from openpyxl.utils.dataframe import dataframe_to_rows
 import shutil
 
-def get_date_range(start_date_str, end_date_str):
-    """Convert date strings to datetime objects and return date range"""
-    try:
-        start_date = datetime.strptime(start_date_str, "%m/%d/%Y")
-        end_date = datetime.strptime(end_date_str, "%m/%d/%Y")
-        return start_date, end_date
-    except ValueError as e:
-        print(f"Error parsing dates: {e}")
-        return None, None
-
-def count_days(start_date, end_date):
-    """Count number of days between start and end date"""
-    if start_date and end_date:
-        return (end_date - start_date).days + 1
-    return 0
+def get_all_excel_files(folder_path):
+    """Get all Excel files in the folder"""
+    excel_files = []
+    for filename in os.listdir(folder_path):
+        if filename.endswith(('.xlsx', '.xls')):
+            excel_files.append(filename)
+    return excel_files
 
 def get_date_from_excel(file_path):
     """Extract date from cell J2 in Excel file"""
@@ -41,7 +33,7 @@ def get_date_from_excel(file_path):
         print(f"Error reading date from {file_path}: {e}")
         return None
 
-def rename_excel_files(folder_path, start_date, end_date):
+def rename_excel_files(folder_path):
     """Rename Excel files based on date in J2 cell"""
     renamed_files = []
     
@@ -52,7 +44,7 @@ def rename_excel_files(folder_path, start_date, end_date):
             # Get date from J2 cell
             file_date = get_date_from_excel(file_path)
             
-            if file_date and start_date <= file_date <= end_date:
+            if file_date:
                 # Format new filename as file_yyyymmdd.xlsx
                 new_filename = f"file_{file_date.strftime('%Y%m%d')}.xlsx"
                 new_file_path = os.path.join(folder_path, new_filename)
@@ -65,10 +57,7 @@ def rename_excel_files(folder_path, start_date, end_date):
                 except Exception as e:
                     print(f"Error renaming {filename}: {e}")
             else:
-                if file_date:
-                    print(f"File {filename} date {file_date.strftime('%Y-%m-%d')} is outside the specified range")
-                else:
-                    print(f"Could not process {filename} - no valid date found")
+                print(f"Could not process {filename} - no valid date found")
     
     return renamed_files
 
@@ -95,23 +84,27 @@ def refresh_pivot_table(workbook, sheet_name='Sheet2'):
     except Exception as e:
         print(f"Error refreshing pivot table: {e}")
 
-def process_files(folder_path, template_path, start_date_str, end_date_str):
+def process_files(folder_path, template_path):
     """Main function to process all files"""
     
-    # Parse dates and count days
-    start_date, end_date = get_date_range(start_date_str, end_date_str)
-    if not start_date or not end_date:
-        print("Invalid date format. Please use MM/DD/YYYY format.")
+    # Get all Excel files in the folder
+    excel_files = get_all_excel_files(folder_path)
+    
+    print(f"Found {len(excel_files)} Excel files in the folder:")
+    for i, filename in enumerate(excel_files, 1):
+        print(f"{i}. {filename}")
+    
+    if not excel_files:
+        print("No Excel files found in the folder.")
         return
     
-    days_count = count_days(start_date, end_date)
-    print(f"Processing files from {start_date_str} to {end_date_str} ({days_count} days)")
+    print(f"\nProcessing {len(excel_files)} files...")
     
     # Rename files based on date in J2
-    renamed_files = rename_excel_files(folder_path, start_date, end_date)
+    renamed_files = rename_excel_files(folder_path)
     
     if not renamed_files:
-        print("No files found in the date range or no files to process.")
+        print("No files could be processed (no valid dates found).")
         return
     
     # Process each renamed file
@@ -178,8 +171,6 @@ def main():
     # Get user inputs
     folder_path = input("Enter the folder path containing Excel files: ").strip()
     template_path = input("Enter the path to the template file: ").strip()
-    start_date = input("Enter start date (MM/DD/YYYY): ").strip()
-    end_date = input("Enter end date (MM/DD/YYYY): ").strip()
     
     # Validate folder path
     if not os.path.exists(folder_path):
@@ -192,7 +183,7 @@ def main():
         return
     
     # Process files
-    process_files(folder_path, template_path, start_date, end_date)
+    process_files(folder_path, template_path)
     
     print("\nProcessing completed!")
 
