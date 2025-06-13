@@ -41,7 +41,7 @@ def read_csv_with_encoding(file_path):
         df.drop(index=0, inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        headers = df.iloc[1, 0:9].tolist()
+        headers = df.iloc[0, 0:9].tolist()
         print(f"Extracted headers from second row: {headers}")
 
         df = df.iloc[2:]
@@ -55,14 +55,16 @@ def read_csv_with_encoding(file_path):
 
 def extract_date_from_dataframe(df):
     try:
-        if df is not None and len(df.columns) > 9 and len(df) > 1:
-            value = df.iloc[1, 9]
+        if df is not None and df.shape[1] > 9:
+            value = df.iloc[0, 9]
             print(f"Extracting date from value: {value}")
             if pd.notnull(value):
                 try:
-                    return datetime.strptime(str(value), "%m/%d/%Y")
+                    parsed_date = datetime.strptime(str(value), "%Y-%m-%d")
                 except:
-                    return pd.to_datetime(value).to_pydatetime()
+                    parsed_date = pd.to_datetime(value).to_pydatetime()
+                df.drop(columns=df.columns[9], inplace=True)
+                return parsed_date
     except Exception as e:
         print(f"Date parsing failed: {e}")
     return None
