@@ -1,103 +1,68 @@
 import os
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import openpyxl
 from openpyxl.utils.dataframe import dataframe_to_rows
 import shutil
 
 def get_all_csv_files(folder_path):
     """Get all CSV files in the folder"""
-    csv_files = []
-    for filename in os.listdir(folder_path):
-        if filename.endswith('.csv'):
-            csv_files.append(filename)
-    return csv_files
-
-def detect_encoding(file_path):
-    """Detect the encoding of a file"""
-    import chardet
-    with open(file_path, 'rb') as f:
-        raw_data = f.read(10000)  # Read first 10KB
-        result = chardet.detect(raw_data)
-        return result['encoding']
+    return [f for f in os.listdir(folder_path) if f.endswith('.csv')]
 
 def read_csv_with_encoding(file_path):
-    """Read CSV file with automatic encoding detection"""
+    """Read CSV file with encoding detection"""
     encodings_to_try = ['utf-8', 'utf-16', 'utf-16-le', 'utf-16-be', 'latin-1', 'cp1252', 'iso-8859-1']
-    
-    # First try to detect encoding
     try:
-        detected_encoding = detect_encoding(file_path)
-        if detected_encoding:
-            encodings_to_try.insert(0, detected_encoding)
+        import chardet
+        with open(file_path, 'rb') as f:
+            raw_data = f.read(10000)
+            detected_encoding = chardet.detect(raw_data)['encoding']
+            if detected_encoding:
+                encodings_to_try.insert(0, detected_encoding)
     except:
         pass
-    
-    # Try different encodings
+
     for encoding in encodings_to_try:
         try:
             df = pd.read_csv(file_path, encoding=encoding)
-            print(f"Successfully read {file_path} with encoding: {encoding}")
             return df
-        except UnicodeDecodeError:
+        except:
             continue
-        except Exception as e:
-            print(f"Error reading {file_path} with encoding {encoding}: {e}")
-            continue
-    
-    # If all encodings fail, try with errors='ignore'
+
     try:
         df = pd.read_csv(file_path, encoding='utf-8', errors='ignore')
-        print(f"Read {file_path} with UTF-8 and ignored errors")
         return df
-    except Exception as e:
-        print(f"Failed to read {file_path} with any encoding: {e}")
+    except:
         return None
+
 def get_date_from_csv(file_path):
-    """Extract date from cell J2 (column J, row 2) in CSV file"""
+    """Extract date from cell J2 (row 2, col 10)"""
     try:
-        # Read CSV file with encoding detection
-        df = read_csv_with_encoding(file_path)
-        
-        if df is None:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+
+        if len(lines) < 2:
+            print(f"{file_path} doesn't have enough rows")
             return None
-        
-        # Check if we have at least 10 columns (J is the 10th column, index 9)
-        if len(df.columns) < 10:
-            print(f"CSV file {file_path} doesn't have column J")
+
+        second_row = lines[1].strip().split(',')
+        if len(second_row) < 10:
+            print(f"{file_path} doesn't have column J in second row")
             return None
-        
-        # Check if we have at least 2 rows (index 1 for row 2)
-        if len(df) < 2:
-            print(f"CSV file {file_path} doesn't have row 2")
+
+        date_value = second_row[9].strip()
+
+        if not date_value:
             return None
-        
-        # Get value from J2 (column index 9, row index 1)
-        date_value = df.iloc[1, 9]  # Row 2, Column J
-        
-        if pd.isna(date_value):
-            print(f"No date found in J2 of {file_path}")
-            return None
-        
-        # Try to parse the date
-        if isinstance(date_value, str):
-            try:
-                return datetime.strptime(date_value, "%m/%d/%Y")
-            except ValueError:
-                # Try other common date formats
-                try:
-                    return pd.to_datetime(date_value).to_pydatetime()
-                except:
-                    print(f"Could not parse date '{date_value}' from {file_path}")
-                    return None
-        else:
-            # If it's already a datetime-like object
+
+        try:
+            return datetime.strptime(date_value, "%m/%d/%Y")
+        except ValueError:
             try:
                 return pd.to_datetime(date_value).to_pydatetime()
             except:
-                print(f"Could not parse date '{date_value}' from {file_path}")
                 return None
-                
+
     except Exception as e:
         print(f"Error reading date from {file_path}: {e}")
         return None
@@ -105,20 +70,16 @@ def get_date_from_csv(file_path):
 def rename_csv_files(folder_path):
     """Rename CSV files based on date in J2 cell"""
     renamed_files = []
-    
+
     for filename in os.listdir(folder_path):
         if filename.endswith('.csv'):
             file_path = os.path.join(folder_path, filename)
-            
-            # Get date from J2 cell
             file_date = get_date_from_csv(file_path)
-            
+
             if file_date:
-                # Format new filename as file_yyyymmdd.csv
                 new_filename = f"file_{file_date.strftime('%Y%m%d')}.csv"
                 new_file_path = os.path.join(folder_path, new_filename)
-                
-                # Rename the file
+
                 try:
                     os.rename(file_path, new_file_path)
                     renamed_files.append((new_file_path, file_date))
@@ -126,37 +87,30 @@ def rename_csv_files(folder_path):
                 except Exception as e:
                     print(f"Error renaming {filename}: {e}")
             else:
-                print(f"Could not process {filename} - no valid date found")
-    
+                print(f"No valid date in {filename}")
+
     return renamed_files
 
 def extract_data_from_csv(file_path):
     """Extract data from columns A, B, E, G, N starting from row 3"""
     try:
-        # Read CSV file with encoding detection, skip first 2 rows (start from row 3)
-        df = read_csv_with_encoding(file_path)
-        
-        if df is None:
+        df = pd.read_csv(file_path, encoding='utf-8', header=1)
+
+        if df is None or df.empty:
+            print(f"No data in {file_path}")
             return None
-        
-        # Skip first 2 rows
-        df = df.iloc[2:].reset_index(drop=True)
-        
-        # Check if we have enough columns
-        if len(df.columns) < 14:  # N is the 14th column (index 13)
-            print(f"CSV file {file_path} doesn't have enough columns")
+
+        if len(df.columns) < 14:
+            print(f"Not enough columns in {file_path}")
             return None
-        
-        # Extract columns A, B, E, G, N (indices 0, 1, 4, 6, 13)
-        selected_columns = df.iloc[:, [0, 1, 4, 6, 13]].copy()
-        
-        # Rename columns to match A, B, E, G, N
-        selected_columns.columns = ['A', 'B', 'E', 'G', 'N']
-        
-        # Remove any completely empty rows
-        selected_columns = selected_columns.dropna(how='all')
-        
-        return selected_columns
+
+        # Select columns by index (0, 1, 4, 6, 13)
+        selected = df.iloc[:, [0, 1, 4, 6, 13]].copy()
+        selected.columns = ['A', 'B', 'E', 'G', 'N']
+        selected.dropna(how='all', inplace=True)
+
+        return selected
+
     except Exception as e:
         print(f"Error extracting data from {file_path}: {e}")
         return None
@@ -165,7 +119,6 @@ def refresh_pivot_table(workbook, sheet_name='Sheet2'):
     """Refresh pivot table in specified sheet"""
     try:
         worksheet = workbook[sheet_name]
-        # Get all pivot tables in the worksheet
         for pivot_table in worksheet._pivots:
             pivot_table.cache.refreshOnLoad = True
         print(f"Pivot table in {sheet_name} marked for refresh")
@@ -174,106 +127,71 @@ def refresh_pivot_table(workbook, sheet_name='Sheet2'):
 
 def process_files(folder_path, template_path):
     """Main function to process all files"""
-    
-    # Get all CSV files in the folder
     csv_files = get_all_csv_files(folder_path)
-    
-    print(f"Found {len(csv_files)} CSV files in the folder:")
-    for i, filename in enumerate(csv_files, 1):
-        print(f"{i}. {filename}")
-    
+
     if not csv_files:
-        print("No CSV files found in the folder.")
+        print("No CSV files found.")
         return
-    
-    print(f"\nProcessing {len(csv_files)} files...")
-    
-    # Rename files based on date in J2
+
+    print(f"Found {len(csv_files)} CSV files.")
     renamed_files = rename_csv_files(folder_path)
-    
+
     if not renamed_files:
-        print("No files could be processed (no valid dates found).")
+        print("No files were renamed due to missing/invalid dates.")
         return
-    
-    # Process each renamed file
+
     for file_path, file_date in renamed_files:
-        print(f"\nProcessing: {os.path.basename(file_path)}")
-        
-        # Extract data from columns A, B, E, G, N
+        print(f"Processing: {os.path.basename(file_path)}")
+
         extracted_data = extract_data_from_csv(file_path)
-        
+
         if extracted_data is None or extracted_data.empty:
-            print(f"No data extracted from {file_path}")
+            print(f"No valid data in {file_path}")
             continue
-        
-        # Create a copy of the template file
+
         date_str = file_date.strftime('%Y%m%d')
         summary_filename = f"summary_{date_str}.xlsx"
         summary_path = os.path.join(folder_path, summary_filename)
-        
+
         try:
-            # Copy template file
             shutil.copy2(template_path, summary_path)
-            
-            # Load the workbook
             wb = openpyxl.load_workbook(summary_path)
-            
-            # Clear existing data in Sheet1 and paste new data
+
             sheet1 = wb['Sheet1']
-            
-            # Clear all data in Sheet1
             sheet1.delete_rows(1, sheet1.max_row)
-            
-            # Add column headers
+
             headers = ['A', 'B', 'E', 'G', 'N']
             for col_idx, header in enumerate(headers, 1):
                 sheet1.cell(row=1, column=col_idx, value=header)
-            
-            # Add extracted data
+
             for row_idx, row in enumerate(dataframe_to_rows(extracted_data, index=False, header=False), 2):
                 for col_idx, value in enumerate(row, 1):
                     sheet1.cell(row=row_idx, column=col_idx, value=value)
-            
-            print(f"Data pasted to Sheet1: {len(extracted_data)} rows")
-            
-            # Select all data in Sheet1 before refreshing pivot table
-            max_row = sheet1.max_row
-            max_col = sheet1.max_column
-            data_range = f"A1:{openpyxl.utils.get_column_letter(max_col)}{max_row}"
-            
-            # Refresh pivot table in Sheet2
+
             refresh_pivot_table(wb, 'Sheet2')
-            
-            # Save the file
+
             wb.save(summary_path)
             wb.close()
-            
-            print(f"Summary file created: {summary_filename}")
-            
+
+            print(f"Summary saved: {summary_filename}")
+
         except Exception as e:
-            print(f"Error creating summary file for {file_path}: {e}")
+            print(f"Failed to create summary for {file_path}: {e}")
 
 def main():
-    """Main execution function"""
-    
-    # Get user inputs
     folder_path = input("Enter the folder path containing CSV files: ").strip()
     template_path = input("Enter the path to the template Excel file: ").strip()
-    
-    # Validate folder path
+
     if not os.path.exists(folder_path):
         print(f"Folder path does not exist: {folder_path}")
         return
-    
-    # Validate template path
+
     if not os.path.exists(template_path):
         print(f"Template file does not exist: {template_path}")
         return
-    
-    # Process files
+
     process_files(folder_path, template_path)
-    
-    print("\nProcessing completed!")
+    print("Processing completed!")
 
 if __name__ == "__main__":
     main()
