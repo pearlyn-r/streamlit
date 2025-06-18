@@ -1,32 +1,34 @@
-def apply_mapping_to_pivot(workbook, pivot_sheet='Sheet2', mapping=None):
+def extract_mapping_from_xlwings_sheet(wb, sheet_name='mapping'):
     try:
-        if not mapping:
-            print("❗No mapping dictionary provided.")
-            return
+        ws = wb.sheets[sheet_name]
+        mapping = {}
 
-        ws = workbook[pivot_sheet]
-        mapped_count = 0
-        fallback_count = 0
+        data = ws.range("A2").expand('down').value
+        for row in data:
+            key = str(row[0]).strip() if row[0] else None
+            comment = str(row[1]).strip() if len(row) > 1 and row[1] else ""
+            if key:
+                mapping[key] = comment
 
-        for row in range(5, ws.max_row + 1):
-            raw_key = ws.cell(row=row, column=1).value  # Column A
-            if raw_key is None:
-                continue
-
-            cleaned_key = str(raw_key).strip()
-            if cleaned_key in mapping:
-                comment = mapping[cleaned_key]
-                source = "✔️ Mapped"
-                mapped_count += 1
-            else:
-                comment = "Under investigation for now — reason not determined"
-                source = "❗Fallback"
-                fallback_count += 1
-
-            ws.cell(row=row, column=5, value=comment)  # Column E
-
-            print(f"Row {row}: {cleaned_key} → {comment} ({source}) → written to E{row}")
-
-        print(f"\n✅ Mapping complete. {mapped_count} mapped, {fallback_count} fallback.")
+        print(f"✅ Loaded {len(mapping)} mapping entries from '{sheet_name}'.")
+        return mapping
     except Exception as e:
-        print(f"❌ Error in apply_mapping_to_pivot: {e}")
+        print(f"❌ Failed to extract mapping from xlwings: {e}")
+        return {}
+def extract_mapping_from_xlwings_sheet(wb, sheet_name='mapping'):
+    try:
+        ws = wb.sheets[sheet_name]
+        mapping = {}
+
+        data = ws.range("A2").expand('down').value
+        for row in data:
+            key = str(row[0]).strip() if row[0] else None
+            comment = str(row[1]).strip() if len(row) > 1 and row[1] else ""
+            if key:
+                mapping[key] = comment
+
+        print(f"✅ Loaded {len(mapping)} mapping entries from '{sheet_name}'.")
+        return mapping
+    except Exception as e:
+        print(f"❌ Failed to extract mapping from xlwings: {e}")
+        return {}
