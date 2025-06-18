@@ -1,16 +1,32 @@
-start_row_excel = 2 # Start writing from Excel row 2 (e.g., if row 1 is a header)
+def apply_mapping_to_pivot(workbook, pivot_sheet='Sheet2', mapping=None):
+    try:
+        if not mapping:
+            print("❗No mapping dictionary provided.")
+            return
 
-for row_idx, row in enumerate(extracted_data, start=start_row_excel):
-    for col_idx, value in enumerate(row):
-        excel_col_idx = col_idx + 1
-        current_cell = sheet1.cell(row=row_idx, column=excel_col_idx)
+        ws = workbook[pivot_sheet]
+        mapped_count = 0
+        fallback_count = 0
 
-        if col_idx in [3, 4, 5]: # Columns 4, 5, 6 (0-indexed 3, 4, 5)
-            try:
-                num = float(str(value).strip())
-                current_cell.value = num
-                current_cell.number_format = '#,##0.00'
-            except ValueError:
-                current_cell.value = value
-        else:
-            current_cell.value = value
+        for row in range(5, ws.max_row + 1):
+            raw_key = ws.cell(row=row, column=1).value  # Column A
+            if raw_key is None:
+                continue
+
+            cleaned_key = str(raw_key).strip()
+            if cleaned_key in mapping:
+                comment = mapping[cleaned_key]
+                source = "✔️ Mapped"
+                mapped_count += 1
+            else:
+                comment = "Under investigation for now — reason not determined"
+                source = "❗Fallback"
+                fallback_count += 1
+
+            ws.cell(row=row, column=5, value=comment)  # Column E
+
+            print(f"Row {row}: {cleaned_key} → {comment} ({source}) → written to E{row}")
+
+        print(f"\n✅ Mapping complete. {mapped_count} mapped, {fallback_count} fallback.")
+    except Exception as e:
+        print(f"❌ Error in apply_mapping_to_pivot: {e}")
