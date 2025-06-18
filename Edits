@@ -1,23 +1,16 @@
-def extract_data(df):
-    try:
-        selected = df.iloc[:, [0, 1, 4, 6, 8]].copy()
-        selected.columns = ['A', 'B', 'E', 'G', 'N']
+start_row_excel = 2 # Start writing from Excel row 2 (e.g., if row 1 is a header)
 
-        # Force numeric conversion for numeric columns
-        for col in ['E', 'G', 'N']:
-            selected[col] = pd.to_numeric(selected[col], errors='coerce')
+for row_idx, row in enumerate(extracted_data, start=start_row_excel):
+    for col_idx, value in enumerate(row):
+        excel_col_idx = col_idx + 1
+        current_cell = sheet1.cell(row=row_idx, column=excel_col_idx)
 
-        selected.dropna(how='all', inplace=True)
-        return selected
-    except Exception as e:
-        print(f"Error extracting data: {e}")
-        return None
-
-for row_idx, row in enumerate(dataframe_to_rows(extracted_data, index=False, header=False), 2):
-    for col_idx, value in enumerate(row, 1):
-        cell = sheet1.cell(row=row_idx, column=col_idx)
-        if isinstance(value, (int, float)):
-            cell.value = value
-            cell.number_format = '0.00'  # Optional formatting
+        if col_idx in [3, 4, 5]: # Columns 4, 5, 6 (0-indexed 3, 4, 5)
+            try:
+                num = float(str(value).strip())
+                current_cell.value = num
+                current_cell.number_format = '#,##0.00'
+            except ValueError:
+                current_cell.value = value
         else:
-            cell.value = value
+            current_cell.value = value
