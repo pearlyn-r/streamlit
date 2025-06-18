@@ -1,4 +1,8 @@
-def extract_mapping_from_xlwings_sheet(wb, sheet_name='Mapping'):
+import os
+import xlwings as xw
+import time
+
+def extract_mapping_from_xlwings_sheet(wb, sheet_name='mapping'):
     try:
         ws = wb.sheets[sheet_name]
         mapping = {}
@@ -10,40 +14,52 @@ def extract_mapping_from_xlwings_sheet(wb, sheet_name='Mapping'):
             if key:
                 mapping[key] = comment
 
-        print(f"✅ Loaded {len(mapping)} mapping entries from '{sheet_name}'.")
+        print(f"✅ Loaded {len(mapping)} mappings from '{sheet_name}'")
         return mapping
     except Exception as e:
-        print(f"❌ Failed to extract mapping from xlwings: {e}")
+        print(f"❌ Failed to load mapping: {e}")
         return {}
-def apply_mapping_to_excel_pivot_xlwings(file_path, mapping_sheet='Mapping', pivot_sheet='Pivot'):
+
+def process_excel_file(filepath, pivot_sheet='Sheet2', mapping_sheet='mapping'):
     try:
-        import xlwings as xw
-        app = xw.App(visible=False)
-        wb = app.books.open(file_path)
+        app = xw.App(visible=True)
+        wb = app.books.open(filepath)
+        print(f"\n📄 Opened: {filepath}")
 
-        # Refresh all pivots
-        wb.api.RefreshAll()
-
-        # ✅ Extract mapping using xlwings-compatible reader
+        time.sleep(3)  # wait for Excel to refresh pivot tables
         mapping = extract_mapping_from_xlwings_sheet(wb, mapping_sheet)
+        ws = wb.sheets[pivot_sheet]
 
-        ws_pivot = wb.sheets[pivot_sheet]
-
-        # Apply mapping from row 5 downwards
+        mapped = 0
         row = 5
         while True:
-            key_cell = ws_pivot.range(f"A{row}").value
+            key_cell = ws.range(f"A{row}").value
             if not key_cell:
                 break
-            cleaned_key = str(key_cell).strip()
-            comment = mapping.get(cleaned_key, "Under investigation for now — reason not determined")
-            ws_pivot.range(f"E{row}").value = comment
-            print(f"Row {row}: {cleaned_key} → {comment}")
+            key = str(key_cell).strip()
+            comment = mapping.get(key, "Under investigation for now — reason not determined")
+            ws.range(f"E{row}").value = comment
+            print(f"Row {row}: {key} → {comment}")
+            mapped += 1
             row += 1
 
         wb.save()
         wb.close()
         app.quit()
-        print(f"\n✅ Mapping completed and saved in: {file_path}")
+        print(f"✅ Done: {mapped} comments written to '{filepath}'")
+
     except Exception as e:
-        print(f"❌ xlwings mapping failed: {e}")
+        print(f"❌ Error in file {filepath}: {e}")
+
+def process_folder(folder_path):
+    for fname in os.listdir(folder_path):
+        if fname.lower().startswith("summary_") and fname.lower().endswith(".xlsx"):
+            full_path = os.path.join(folder_path, fname)
+            process_excel_file(full_path)
+
+if __name__ == "__main__":
+    folder = input("📁 Enter path to summary_output folder: ").strip()
+    if os.path.exists(folder):
+        process_folder(folder)
+    else:
+        print("❌ Folder does not exist.")
