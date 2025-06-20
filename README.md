@@ -1,4 +1,4 @@
-In 1970 a syndicate of international banks arranged a loan to Iran for telecommunications infrastructure investment. It was a floating rate loan linked to an average of London interbank lending rates. The average rate was the first LIBOR index. Global capital markets, shut down since the 1929 stock market crash, had begun to open again. New IBOR indices evolved to meet demand for floating rate loans.Libor - 18 banks send everyday estimates on what they think they would have to pay to borrow if they needed money,top and bottom 4 are discarded But LIBOR was fundamentally flawed - submission based on estimates on real trades so theres potntional to be manipulated by traders which is what happened
+![image](https://github.com/user-attachments/assets/0ae36276-9911-45c8-90cb-8cc3a9b7f9b3)In 1970 a syndicate of international banks arranged a loan to Iran for telecommunications infrastructure investment. It was a floating rate loan linked to an average of London interbank lending rates. The average rate was the first LIBOR index. Global capital markets, shut down since the 1929 stock market crash, had begun to open again. New IBOR indices evolved to meet demand for floating rate loans.Libor - 18 banks send everyday estimates on what they think they would have to pay to borrow if they needed money,top and bottom 4 are discarded But LIBOR was fundamentally flawed - submission based on estimates on real trades so theres potntional to be manipulated by traders which is what happened
 solution is to move to rfrs -
 The solution was risk-free rates (RFRs). IBOR submissions for the coming 3–month or 6-month period were replaced by rates calculated using overnight rates obtained from prior period transactions with daily compounding used to derive a rate applicable for a future period. Overnight rates have only one day’s credit risk, so the rates are deemed risk-free.
 
@@ -10,3 +10,12 @@ SOFR remained relatively stable around 2% until early 2020, then dropped sharply
 From early 2022, SOFR began a steep and consistent rise, mirroring the Fed’s aggressive rate hikes to combat inflation, reaching above 5% by 2025.
 Transaction volume in the SOFR market (black line) has generally increased over time, peaking above $2.4 trillion in 2025, indicating robust liquidity and growing market adoption
 
+Japan raised rates from 0% to positive for the first time in 17 years due to three key factors:
+
+**1. Inflation Success**: Japan finally achieved "sustained inflation and rising wages" after decades of deflation.
+
+**2. Wage Growth**: Rising wages created a virtuous cycle supporting consumer spending and economic growth.
+
+**3. Yen Weakness**: The yen's ongoing depreciation pressured the BoJ to strengthen the currency through higher rates.
+
+The Bank of Japan moved rates from -0.1% in March 2024 to 0.5% by January 2025 - the highest since 2008. This signals confidence that Japan's economy can finally handle normal interest rates without falling back into deflation.
