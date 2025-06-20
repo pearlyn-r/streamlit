@@ -1,65 +1,95 @@
-import os
-import xlwings as xw
-import time
+Thanks for laying that out clearly. You want to:
 
-def extract_mapping_from_xlwings_sheet(wb, sheet_name='mapping'):
-    try:
-        ws = wb.sheets[sheet_name]
-        mapping = {}
+1. Use two separate CTEs: one for today, one for yesterday
 
-        data = ws.range("A2").expand('down').value
-        for row in data:
-            key = str(row[0]).strip() if row[0] else None
-            comment = str(row[1]).strip() if len(row) > 1 and row[1] else ""
-            if key:
-                mapping[key] = comment
 
-        print(f"✅ Loaded {len(mapping)} mappings from '{sheet_name}'")
-        return mapping
-    except Exception as e:
-        print(f"❌ Failed to load mapping: {e}")
-        return {}
+2. Join them to produce the pivoted, side-by-side comparison
 
-def process_excel_file(filepath, pivot_sheet='Sheet2', mapping_sheet='mapping'):
-    try:
-        app = xw.App(visible=True)
-        wb = app.books.open(filepath)
-        print(f"\n📄 Opened: {filepath}")
 
-        time.sleep(3)  # wait for Excel to refresh pivot tables
-        mapping = extract_mapping_from_xlwings_sheet(wb, mapping_sheet)
-        ws = wb.sheets[pivot_sheet]
+3. Include rating and industry_flag from both dates (if needed)
 
-        mapped = 0
-        row = 5
-        while True:
-            key_cell = ws.range(f"A{row}").value
-            if not key_cell:
-                break
-            key = str(key_cell).strip()
-            comment = mapping.get(key, "Under investigation for now — reason not determined")
-            ws.range(f"E{row}").value = comment
-            print(f"Row {row}: {key} → {comment}")
-            mapped += 1
-            row += 1
 
-        wb.save()
-        wb.close()
-        app.quit()
-        print(f"✅ Done: {mapped} comments written to '{filepath}'")
 
-    except Exception as e:
-        print(f"❌ Error in file {filepath}: {e}")
 
-def process_folder(folder_path):
-    for fname in os.listdir(folder_path):
-        if fname.lower().startswith("summary_") and fname.lower().endswith(".xlsx"):
-            full_path = os.path.join(folder_path, fname)
-            process_excel_file(full_path)
+---
 
-if __name__ == "__main__":
-    folder = input("📁 Enter path to summary_output folder: ").strip()
-    if os.path.exists(folder):
-        process_folder(folder)
-    else:
-        print("❌ Folder does not exist.")
+✅ Final SQL Query (Using Two CTEs: Today + Yesterday)
+
+WITH today AS (
+  SELECT
+    name,
+    id,
+    product,
+    SUM(contribution) AS contribution_today,
+    CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END AS rating_today,
+    CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry_today
+  FROM your_table
+  WHERE date = CURRENT_DATE
+  GROUP BY name, id, product, tier, industry
+),
+
+yesterday AS (
+  SELECT
+    name,
+    id,
+    product,
+    SUM(contribution) AS contribution_yesterday,
+    CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END AS rating_yesterday,
+    CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry_yesterday
+  FROM your_table
+  WHERE date = CURRENT_DATE - INTERVAL 1 DAY
+  GROUP BY name, id, product, tier, industry
+)
+
+SELECT
+  COALESCE(t.name, y.name) AS name,
+  COALESCE(t.id, y.id) AS id,
+  COALESCE(t.product, y.product) AS product,
+  COALESCE(t.contribution_today, 0) AS date,
+  COALESCE(y.contribution_yesterday, 0) AS previous_date,
+  COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0) AS delta,
+  ROUND(
+    100.0 * (COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0)) / 
+    NULLIF(COALESCE(y.contribution_yesterday, 0), 0),
+    2
+  ) AS percent_change,
+  t.rating_today AS rating,
+  t.industry_today AS industry
+FROM today t
+FULL OUTER JOIN yesterday y
+  ON t.name = y.name AND t.id = y.id AND t.product = y.product;
+
+
+---
+
+🔍 Notes
+
+FULL OUTER JOIN ensures you get rows even if a product exists on only one of the two days.
+
+If you only want rows present in both days, use INNER JOIN.
+
+rating and industry are taken from today — you can include both *_today and *_yesterday if you want to compare them explicitly.
+
+
+
+---
+
+🧾 Output Example
+
+name	id	product	date	previous_date	delta	percent_change	rating	industry
+
+Stock1	s1	prod a	50	40	10	25.00	b	d
+Stock1	s1	prod b	50	50	0	0.00	b	d
+
+
+Let me know if you want to:
+
+Show mismatched rating between days
+
+Filter to only changing stocks
+
+Add a total row per stock
+
+
+Happy to help expand this.
+
