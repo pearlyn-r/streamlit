@@ -1,1 +1,12 @@
-read me
+In 1970 a syndicate of international banks arranged a loan to Iran for telecommunications infrastructure investment. It was a floating rate loan linked to an average of London interbank lending rates. The average rate was the first LIBOR index. Global capital markets, shut down since the 1929 stock market crash, had begun to open again. New IBOR indices evolved to meet demand for floating rate loans.Libor - 18 banks send everyday estimates on what they think they would have to pay to borrow if they needed money,top and bottom 4 are discarded But LIBOR was fundamentally flawed - submission based on estimates on real trades so theres potntional to be manipulated by traders which is what happened
+solution is to move to rfrs -
+The solution was risk-free rates (RFRs). IBOR submissions for the coming 3–month or 6-month period were replaced by rates calculated using overnight rates obtained from prior period transactions with daily compounding used to derive a rate applicable for a future period. Overnight rates have only one day’s credit risk, so the rates are deemed risk-free.
+
+Derivative valuations is a two-step process: 1) Predict cash flows created by changes in an index, 2) discount the cash flows to present value using risk-free rates obtained from a yield curve. Prior to IBOR transition, IBOR indices were the basis for both steps. The move to RFRs, however, triggered innovation that impacted these steps. First, a new set of index calculation and settlement conventions was developed to adjust for the backward looking, overnight-compounding RFRs. Second, the replacement of the single IBOR-based yield curve for each currency with an OIS discounting approach that added a credit spread to each currency’s overnight index swap (OIS) curve depending on the quality of collateral posted. A third, related, innovation was developed for uncollateralised derivatives. An upfront adjustment to the mark-to-market $valuation of the derivative was required to adjust for the credit risk of in-the-money positions. The adjustment is referred to as the credit valuation adjustment (CVA).
+
+
+SOFR remained relatively stable around 2% until early 2020, then dropped sharply to near zero during the onset of the COVID-19 pandemic, reflecting emergency Federal Reserve rate cuts and market stress.
+
+From early 2022, SOFR began a steep and consistent rise, mirroring the Fed’s aggressive rate hikes to combat inflation, reaching above 5% by 2025.
+Transaction volume in the SOFR market (black line) has generally increased over time, peaking above $2.4 trillion in 2025, indicating robust liquidity and growing market adoption
+
