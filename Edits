@@ -4,9 +4,11 @@ WITH base_today AS (
     id,
     product,
     contribution,
+    ce,
+    long,
+    short,
     CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END AS rating,
-    CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry,
-    ROW_NUMBER() OVER (PARTITION BY name, id ORDER BY product) AS rn
+    CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry
   FROM your_table
   WHERE date = CURRENT_DATE
 ),
@@ -14,24 +16,29 @@ base_yesterday AS (
   SELECT
     name,
     id,
+    product,
     contribution,
+    ce,
+    long,
+    short,
     CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END AS rating,
     CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry
   FROM your_table
   WHERE date = CURRENT_DATE - INTERVAL 1 DAY
 ),
-agg_today AS (
+
+-- issuer-level aggregates
+agg_issuer_today AS (
   SELECT
     name,
     id,
     SUM(contribution) AS contribution_today,
     MAX(rating) AS rating_today,
-    MAX(industry) AS industry_today,
-    MIN(CASE WHEN rn = 1 THEN product END) AS sample_product
+    MAX(industry) AS industry_today
   FROM base_today
   GROUP BY name, id
 ),
-agg_yesterday AS (
+agg_issuer_yesterday AS (
   SELECT
     name,
     id,
@@ -40,25 +47,73 @@ agg_yesterday AS (
     MAX(industry) AS industry_yesterday
   FROM base_yesterday
   GROUP BY name, id
+),
+issuer_metrics AS (
+  SELECT
+    COALESCE(t.name, y.name) AS name,
+    COALESCE(t.id, y.id) AS id,
+    COALESCE(t.contribution_today, 0) AS date_issuer,
+    COALESCE(y.contribution_yesterday, 0) AS previous_date_issuer,
+    COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0) AS delta_issuer,
+    ROUND(
+      100.0 * (
+        COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0)
+      ) / NULLIF(COALESCE(y.contribution_yesterday, 0), 0),
+      2
+    ) AS percent_change_issuer,
+    t.rating_today AS rating,
+    y.rating_yesterday AS rating_prev,
+    t.industry_today AS industry,
+    y.industry_yesterday AS industry_prev
+  FROM agg_issuer_today t
+  FULL OUTER JOIN agg_issuer_yesterday y
+    ON t.name = y.name AND t.id = y.id
+),
+
+-- combine product-level and issuer-level
+product_combined AS (
+  SELECT
+    COALESCE(t.name, y.name) AS name,
+    COALESCE(t.id, y.id) AS id,
+    COALESCE(t.product, y.product) AS product,
+    COALESCE(t.contribution, 0) AS date,
+    COALESCE(y.contribution, 0) AS previous_date,
+    COALESCE(t.contribution, 0) - COALESCE(y.contribution, 0) AS delta_product,
+    ROUND(
+      100.0 * (
+        COALESCE(t.contribution, 0) - COALESCE(y.contribution, 0)
+      ) / NULLIF(COALESCE(y.contribution, 0), 0),
+      2
+    ) AS percent_change_product,
+    COALESCE(t.ce, y.ce) AS ce,
+    COALESCE(t.long, y.long) AS long,
+    COALESCE(t.short, y.short) AS short
+  FROM base_today t
+  FULL OUTER JOIN base_yesterday y
+    ON t.name = y.name AND t.id = y.id AND t.product = y.product
 )
+
+-- Final output
 SELECT
-  COALESCE(t.name, y.name) AS name,
-  COALESCE(t.id, y.id) AS id,
-  t.sample_product AS product,
-  COALESCE(t.contribution_today, 0) AS date,
-  COALESCE(y.contribution_yesterday, 0) AS previous_date,
-  COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0) AS delta,
-  ROUND(
-    100.0 * (
-      COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0)
-    ) / NULLIF(COALESCE(y.contribution_yesterday, 0), 0),
-    2
-  ) AS percent_change,
-  t.rating_today AS rating,
-  y.rating_yesterday AS rating_prev,
-  t.industry_today AS industry,
-  y.industry_yesterday AS industry_prev
-FROM agg_today t
-FULL OUTER JOIN agg_yesterday y
-  ON t.name = y.name AND t.id = y.id
-ORDER BY delta DESC;
+  p.name,
+  p.id,
+  p.product,
+  p.date,
+  p.previous_date,
+  p.delta_product,
+  p.percent_change_product,
+  p.ce,
+  p.long,
+  p.short,
+  i.date_issuer,
+  i.previous_date_issuer,
+  i.delta_issuer,
+  i.percent_change_issuer,
+  i.rating,
+  i.rating_prev,
+  i.industry,
+  i.industry_prev
+FROM product_combined p
+LEFT JOIN issuer_metrics i
+  ON p.name = i.name AND p.id = i.id
+ORDER BY i.delta_issuer DESC, p.name, p.product;
