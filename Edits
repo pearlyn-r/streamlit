@@ -1,119 +1,92 @@
-WITH base_today AS (
+To use the IDs of issuers with top delta as input for filtering, you can wrap your current query inside a Common Table Expression (CTE) or a subquery, and then filter on that delta.
+
+Here's how to do it step by step:
+
+
+---
+
+✅ Step 1: Use your current query as a CTE
+
+Name it full_data, and then pick only the top issuers based on issuer-level delta (not per product).
+
+
+---
+
+✅ Final Modified Query (With Filtering for Top Issuers)
+
+WITH today AS (
   SELECT
     name,
     id,
     product,
-    contribution,
-    ce,
-    long,
-    short,
-    CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END AS rating,
-    CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry
+    SUM(contribution) OVER (PARTITION BY name, id) AS contribution_today,
+    MAX(CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END) OVER (PARTITION BY name, id) AS rating_today,
+    MAX(CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END) OVER (PARTITION BY name, id) AS industry_today
   FROM your_table
   WHERE date = CURRENT_DATE
 ),
-base_yesterday AS (
+
+yesterday AS (
   SELECT
     name,
     id,
-    product,
-    contribution,
-    ce,
-    long,
-    short,
-    CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END AS rating,
-    CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry
+    MAX(CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END) AS rating_yesterday,
+    MAX(CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END) AS industry_yesterday,
+    SUM(contribution) AS contribution_yesterday
   FROM your_table
   WHERE date = CURRENT_DATE - INTERVAL 1 DAY
+  GROUP BY name, id
 ),
 
--- issuer-level aggregates
-agg_issuer_today AS (
+full_data AS (
   SELECT
-    name,
-    id,
-    SUM(contribution) AS contribution_today,
-    MAX(rating) AS rating_today,
-    MAX(industry) AS industry_today
-  FROM base_today
-  GROUP BY name, id
-),
-agg_issuer_yesterday AS (
-  SELECT
-    name,
-    id,
-    SUM(contribution) AS contribution_yesterday,
-    MAX(rating) AS rating_yesterday,
-    MAX(industry) AS industry_yesterday
-  FROM base_yesterday
-  GROUP BY name, id
-),
-issuer_metrics AS (
-  SELECT
-    COALESCE(t.name, y.name) AS name,
-    COALESCE(t.id, y.id) AS id,
-    COALESCE(t.contribution_today, 0) AS date_issuer,
-    COALESCE(y.contribution_yesterday, 0) AS previous_date_issuer,
-    COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0) AS delta_issuer,
+    DISTINCT t.name,
+    t.id,
+    t.product,
+    t.contribution_today AS date,
+    COALESCE(y.contribution_yesterday, 0) AS previous_date,
+    t.contribution_today - COALESCE(y.contribution_yesterday, 0) AS delta,
     ROUND(
-      100.0 * (
-        COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0)
-      ) / NULLIF(COALESCE(y.contribution_yesterday, 0), 0),
+      100.0 * (t.contribution_today - COALESCE(y.contribution_yesterday, 0)) /
+      NULLIF(COALESCE(y.contribution_yesterday, 0), 0),
       2
-    ) AS percent_change_issuer,
+    ) AS percent_change,
     t.rating_today AS rating,
     y.rating_yesterday AS rating_prev,
     t.industry_today AS industry,
     y.industry_yesterday AS industry_prev
-  FROM agg_issuer_today t
-  FULL OUTER JOIN agg_issuer_yesterday y
+  FROM today t
+  LEFT JOIN yesterday y
     ON t.name = y.name AND t.id = y.id
 ),
 
--- combine product-level and issuer-level
-product_combined AS (
-  SELECT
-    COALESCE(t.name, y.name) AS name,
-    COALESCE(t.id, y.id) AS id,
-    COALESCE(t.product, y.product) AS product,
-    COALESCE(t.contribution, 0) AS date,
-    COALESCE(y.contribution, 0) AS previous_date,
-    COALESCE(t.contribution, 0) - COALESCE(y.contribution, 0) AS delta_product,
-    ROUND(
-      100.0 * (
-        COALESCE(t.contribution, 0) - COALESCE(y.contribution, 0)
-      ) / NULLIF(COALESCE(y.contribution, 0), 0),
-      2
-    ) AS percent_change_product,
-    COALESCE(t.ce, y.ce) AS ce,
-    COALESCE(t.long, y.long) AS long,
-    COALESCE(t.short, y.short) AS short
-  FROM base_today t
-  FULL OUTER JOIN base_yesterday y
-    ON t.name = y.name AND t.id = y.id AND t.product = y.product
+top_issuers AS (
+  SELECT id
+  FROM full_data
+  GROUP BY id
+  ORDER BY SUM(delta) DESC
+  LIMIT 10  -- you can change this number to however many top issuers you want
 )
 
--- Final output
-SELECT
-  p.name,
-  p.id,
-  p.product,
-  p.date,
-  p.previous_date,
-  p.delta_product,
-  p.percent_change_product,
-  p.ce,
-  p.long,
-  p.short,
-  i.date_issuer,
-  i.previous_date_issuer,
-  i.delta_issuer,
-  i.percent_change_issuer,
-  i.rating,
-  i.rating_prev,
-  i.industry,
-  i.industry_prev
-FROM product_combined p
-LEFT JOIN issuer_metrics i
-  ON p.name = i.name AND p.id = i.id
-ORDER BY i.delta_issuer DESC, p.name, p.product;
+SELECT *
+FROM full_data
+WHERE id IN (SELECT id FROM top_issuers)
+ORDER BY delta DESC;
+
+
+---
+
+✅ What This Does:
+
+full_data: your full per-product, per-issuer data with all columns
+
+top_issuers: finds top N issuer ids by issuer-level total delta
+
+Final query: filters full_data to only include rows for those top issuer IDs
+
+
+
+---
+
+Would you like to also group and display issuer-level totals separately above each group of products? Let me know!
+
