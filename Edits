@@ -1,95 +1,64 @@
-Thanks for laying that out clearly. You want to:
-
-1. Use two separate CTEs: one for today, one for yesterday
-
-
-2. Join them to produce the pivoted, side-by-side comparison
-
-
-3. Include rating and industry_flag from both dates (if needed)
-
-
-
-
----
-
-✅ Final SQL Query (Using Two CTEs: Today + Yesterday)
-
-WITH today AS (
+WITH base_today AS (
   SELECT
     name,
     id,
     product,
-    SUM(contribution) AS contribution_today,
-    CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END AS rating_today,
-    CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry_today
+    contribution,
+    CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END AS rating,
+    CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry,
+    ROW_NUMBER() OVER (PARTITION BY name, id ORDER BY product) AS rn
   FROM your_table
   WHERE date = CURRENT_DATE
-  GROUP BY name, id, product, tier, industry
 ),
-
-yesterday AS (
+base_yesterday AS (
   SELECT
     name,
     id,
-    product,
-    SUM(contribution) AS contribution_yesterday,
-    CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END AS rating_yesterday,
-    CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry_yesterday
+    contribution,
+    CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END AS rating,
+    CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END AS industry
   FROM your_table
   WHERE date = CURRENT_DATE - INTERVAL 1 DAY
-  GROUP BY name, id, product, tier, industry
+),
+agg_today AS (
+  SELECT
+    name,
+    id,
+    SUM(contribution) AS contribution_today,
+    MAX(rating) AS rating_today,
+    MAX(industry) AS industry_today,
+    MIN(CASE WHEN rn = 1 THEN product END) AS sample_product
+  FROM base_today
+  GROUP BY name, id
+),
+agg_yesterday AS (
+  SELECT
+    name,
+    id,
+    SUM(contribution) AS contribution_yesterday,
+    MAX(rating) AS rating_yesterday,
+    MAX(industry) AS industry_yesterday
+  FROM base_yesterday
+  GROUP BY name, id
 )
-
 SELECT
   COALESCE(t.name, y.name) AS name,
   COALESCE(t.id, y.id) AS id,
-  COALESCE(t.product, y.product) AS product,
+  t.sample_product AS product,
   COALESCE(t.contribution_today, 0) AS date,
   COALESCE(y.contribution_yesterday, 0) AS previous_date,
   COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0) AS delta,
   ROUND(
-    100.0 * (COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0)) / 
-    NULLIF(COALESCE(y.contribution_yesterday, 0), 0),
+    100.0 * (
+      COALESCE(t.contribution_today, 0) - COALESCE(y.contribution_yesterday, 0)
+    ) / NULLIF(COALESCE(y.contribution_yesterday, 0), 0),
     2
   ) AS percent_change,
   t.rating_today AS rating,
-  t.industry_today AS industry
-FROM today t
-FULL OUTER JOIN yesterday y
-  ON t.name = y.name AND t.id = y.id AND t.product = y.product;
-
-
----
-
-🔍 Notes
-
-FULL OUTER JOIN ensures you get rows even if a product exists on only one of the two days.
-
-If you only want rows present in both days, use INNER JOIN.
-
-rating and industry are taken from today — you can include both *_today and *_yesterday if you want to compare them explicitly.
-
-
-
----
-
-🧾 Output Example
-
-name	id	product	date	previous_date	delta	percent_change	rating	industry
-
-Stock1	s1	prod a	50	40	10	25.00	b	d
-Stock1	s1	prod b	50	50	0	0.00	b	d
-
-
-Let me know if you want to:
-
-Show mismatched rating between days
-
-Filter to only changing stocks
-
-Add a total row per stock
-
-
-Happy to help expand this.
-
+  y.rating_yesterday AS rating_prev,
+  t.industry_today AS industry,
+  y.industry_yesterday AS industry_prev
+FROM agg_today t
+FULL OUTER JOIN agg_yesterday y
+  ON t.name = y.name AND t.id = y.id
+ORDER BY delta DESC;
