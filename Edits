@@ -1,92 +1,41 @@
-To use the IDs of issuers with top delta as input for filtering, you can wrap your current query inside a Common Table Expression (CTE) or a subquery, and then filter on that delta.
+import re
 
-Here's how to do it step by step:
+# === Configuration ===
+input_file = "input.txt"  # Path to original Notepad file
+target_id = "1234567"     # Hardcoded 7-digit string to replace
 
+# Lists of new values for 8 iterations
+start_dates = ["2025-01-01", "2025-02-01", "2025-03-01", "2025-04-01",
+               "2025-05-01", "2025-06-01", "2025-07-01", "2025-08-01"]
 
----
+end_dates = ["2025-01-31", "2025-02-28", "2025-03-31", "2025-04-30",
+             "2025-05-31", "2025-06-30", "2025-07-31", "2025-08-31"]
 
-✅ Step 1: Use your current query as a CTE
+new_ids = ["7654321", "8765432", "9876543", "2345678",
+           "3456789", "4567890", "5678901", "6789012"]
 
-Name it full_data, and then pick only the top issuers based on issuer-level delta (not per product).
+# === Read original query from file ===
+with open(input_file, "r", encoding="utf-8") as file:
+    original_query = file.read()
 
+# === Loop to create 8 modified versions ===
+for i in range(8):
+    query = original_query  # Reset for each iteration
 
----
+    # Find and replace first two dates
+    dates_found = re.findall(r"\d{4}-\d{2}-\d{2}", query)
+    if len(dates_found) < 2:
+        raise ValueError("Less than two dates found in input.")
 
-✅ Final Modified Query (With Filtering for Top Issuers)
+    query = query.replace(dates_found[0], start_dates[i], 1)
+    query = query.replace(dates_found[1], end_dates[i], 1)
 
-WITH today AS (
-  SELECT
-    name,
-    id,
-    product,
-    SUM(contribution) OVER (PARTITION BY name, id) AS contribution_today,
-    MAX(CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END) OVER (PARTITION BY name, id) AS rating_today,
-    MAX(CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END) OVER (PARTITION BY name, id) AS industry_today
-  FROM your_table
-  WHERE date = CURRENT_DATE
-),
+    # Replace the hardcoded 7-digit ID
+    query = query.replace(target_id, new_ids[i], 1)
 
-yesterday AS (
-  SELECT
-    name,
-    id,
-    MAX(CASE WHEN tier IN ('x', 'f') THEN 'a' ELSE 'b' END) AS rating_yesterday,
-    MAX(CASE WHEN industry IN ('x', 'f') THEN 'a' ELSE 'b' END) AS industry_yesterday,
-    SUM(contribution) AS contribution_yesterday
-  FROM your_table
-  WHERE date = CURRENT_DATE - INTERVAL 1 DAY
-  GROUP BY name, id
-),
+    # Save modified query
+    output_path = f"output_{i+1}.txt"
+    with open(output_path, "w", encoding="utf-8") as outfile:
+        outfile.write(query)
 
-full_data AS (
-  SELECT
-    DISTINCT t.name,
-    t.id,
-    t.product,
-    t.contribution_today AS date,
-    COALESCE(y.contribution_yesterday, 0) AS previous_date,
-    t.contribution_today - COALESCE(y.contribution_yesterday, 0) AS delta,
-    ROUND(
-      100.0 * (t.contribution_today - COALESCE(y.contribution_yesterday, 0)) /
-      NULLIF(COALESCE(y.contribution_yesterday, 0), 0),
-      2
-    ) AS percent_change,
-    t.rating_today AS rating,
-    y.rating_yesterday AS rating_prev,
-    t.industry_today AS industry,
-    y.industry_yesterday AS industry_prev
-  FROM today t
-  LEFT JOIN yesterday y
-    ON t.name = y.name AND t.id = y.id
-),
-
-top_issuers AS (
-  SELECT id
-  FROM full_data
-  GROUP BY id
-  ORDER BY SUM(delta) DESC
-  LIMIT 10  -- you can change this number to however many top issuers you want
-)
-
-SELECT *
-FROM full_data
-WHERE id IN (SELECT id FROM top_issuers)
-ORDER BY delta DESC;
-
-
----
-
-✅ What This Does:
-
-full_data: your full per-product, per-issuer data with all columns
-
-top_issuers: finds top N issuer ids by issuer-level total delta
-
-Final query: filters full_data to only include rows for those top issuer IDs
-
-
-
----
-
-Would you like to also group and display issuer-level totals separately above each group of products? Let me know!
-
+    print(f"Saved modified query to {output_path}")
