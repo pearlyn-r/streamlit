@@ -115,16 +115,18 @@ def extract_date_from_dataframe(df):
         print(f"Date extraction failed: {e}")
         return None
 
-def extract_data(df, mapping=None):
+def extract_data(df, mtm_mapping=None, notional_mapping=None, data_type_prefix=None):
     """
-    Selects relevant columns from the DataFrame and applies comments based on a mapping.
+    Selects relevant columns from the DataFrame and applies comments based on a mapping
+    and the data type (MTM or Notional).
     """
     try:
-        # Define the list of required columns for the final extracted data.
+        # Define the list of common required columns for the final extracted data.
         # 'Comment' column will be added/populated.
         required_cols = [
             "Mtm BreakReasoncode", "Mtm System Correct", "Mtm USD Abs Diff",
-            "Count of Netting Group", "Count of MTM_Break Reason Code"
+            "Count of Netting Group", "Count of MTM_Break Reason Code",
+            "Notional Break Reason Code" # Added for Notional mapping
         ]
         
         # Filter `required_cols` to include only those actually present in the DataFrame.
@@ -140,16 +142,32 @@ def extract_data(df, mapping=None):
         if 'Comment' not in selected.columns:
             selected['Comment'] = "" 
 
-        # Apply mapping for comments if a mapping dictionary is provided.
-        if mapping:
-            if "Mtm BreakReasoncode" in selected.columns:
-                for i in range(len(selected)):
-                    key = str(selected.at[i, "Mtm BreakReasoncode"]).strip()
-                    # Apply comment from mapping, default to "Under investigation" if key not found.
-                    selected.at[i, 'Comment'] = mapping.get(key, "Under investigation")
-            else:
-                print("Warning: 'Mtm BreakReasoncode' column not found for applying mapping comments.")
-                selected['Comment'] = "Mapping key column missing" # Fallback if key column is absent
+        current_mapping = None
+        mapping_key_column = None
+
+        # Determine which mapping and key column to use based on the data_type_prefix
+        if data_type_prefix == "mtm":
+            current_mapping = mtm_mapping
+            mapping_key_column = "Mtm BreakReasoncode"
+        elif data_type_prefix == "notional":
+            current_mapping = notional_mapping
+            mapping_key_column = "Notional Break Reason Code"
+        else:
+            print(f"Warning: Unknown data_type_prefix '{data_type_prefix}'. No mapping will be applied.")
+            return selected # Return without mapping if prefix is unknown
+
+        # Apply mapping for comments if a mapping dictionary is provided and the key column exists.
+        if current_mapping and mapping_key_column and mapping_key_column in selected.columns:
+            for i in range(len(selected)):
+                key = str(selected.at[i, mapping_key_column]).strip()
+                # Apply comment from mapping, default to "Under investigation" if key not found.
+                selected.at[i, 'Comment'] = current_mapping.get(key, "Under investigation")
+            print(f"Mapping applied using '{mapping_key_column}' for '{data_type_prefix}' data.")
+        elif mapping_key_column not in selected.columns:
+            print(f"Warning: Mapping key column '{mapping_key_column}' not found for '{data_type_prefix}' data. Cannot apply mapping.")
+            selected['Comment'] = f"Mapping key column '{mapping_key_column}' missing" # Fallback if key column is absent
+        else:
+            print(f"Warning: No mapping dictionary provided for '{data_type_prefix}' data. Comments not applied.")
 
         print(f"Data extracted with shape: {selected.shape}")
         return selected
@@ -208,13 +226,17 @@ def refresh_pivot_table(workbook, sheet_name):
     except Exception as e:
         print(f"Error refreshing pivot table on sheet '{sheet_name}': {e}")
 
-def rename_file_with_date(file_path, folder_path, file_date, prefix):
+def rename_file_with_date(file_path, folder_path, file_date):
     """
-    Renames a file by adding a prefix and date to its name,
-    and moves it to the specified folder. Handles overwriting existing files.
+    Renames a file by using the last part of the folder path as prefix and date.
+    Moves it to the specified folder, handles overwriting existing files.
     """
     try:
-        # Create a clean prefix for the filename (lowercase, spaces replaced by underscores).
+        # Extract the last directory name from the folder_path to use as a prefix
+        # This handles cases like 'C:\data\mtm_files' -> 'mtm_files'
+        # Or '/home/user/notional_data' -> 'notional_data'
+        prefix = os.path.basename(os.path.normpath(folder_path))
+        
         clean_prefix = prefix.replace(" ", "_").lower()
         new_filename = f"{clean_prefix}_{file_date.strftime('%Y%m%d')}.csv"
         new_file_path = os.path.join(folder_path, new_filename)
@@ -233,18 +255,19 @@ def rename_file_with_date(file_path, folder_path, file_date, prefix):
 
 # --- Main Processing Logic ---
 
-def process_data_and_update_excel(folder_path, file_prefix, data_sheet_name, mapping_sheet_name, pivot_sheet_name, wb):
+def process_data_and_update_excel(folder_path, file_prefix, data_sheet_name, pivot_sheet_name, wb, mtm_mapping, notional_mapping):
     """
     Orchestrates the process of reading CSVs, extracting/transforming data,
     writing to an Excel sheet, applying comments, and refreshing pivot tables.
 
     Args:
         folder_path (str): The path to the folder containing the CSV files.
-        file_prefix (str): A string prefix for naming the processed CSV files (e.g., "mtm", "notional").
+        file_prefix (str): A string prefix for identifying the data type (e.g., "mtm", "notional").
         data_sheet_name (str): The name of the Excel sheet where processed data will be written.
-        mapping_sheet_name (str): The name of the Excel sheet containing mapping data for comments.
         pivot_sheet_name (str): The name of the Excel sheet containing the pivot table to refresh.
         wb (openpyxl.workbook.Workbook): The openpyxl workbook object to update.
+        mtm_mapping (dict): The mapping dictionary for MTM data.
+        notional_mapping (dict): The mapping dictionary for Notional data.
 
     Returns:
         bool: True if at least one file was processed successfully, False otherwise.
@@ -257,11 +280,6 @@ def process_data_and_update_excel(folder_path, file_prefix, data_sheet_name, map
         return False
 
     processed_any_file = False
-
-    # Load mapping only once for this file type
-    mapping = extract_mapping_from_sheet(wb, sheet_name=mapping_sheet_name)
-    if not mapping:
-        print(f"Warning: No mapping found for {mapping_sheet_name}. Comments might not be applied correctly for {file_prefix} data.")
 
     # Ensure the target data sheet exists in the workbook
     if data_sheet_name not in wb.sheetnames:
@@ -291,42 +309,28 @@ def process_data_and_update_excel(folder_path, file_prefix, data_sheet_name, map
             print(f"Skipping processing of '{filename}' due to invalid or missing date.")
             continue
 
-        # 3. Rename the original CSV file with the prefix and date
-        new_filename, new_file_path = rename_file_with_date(file_path, folder_path, file_date, file_prefix)
+        # 3. Rename the original CSV file with the folder name and date
+        new_filename, new_file_path = rename_file_with_date(file_path, folder_path, file_date)
         if new_file_path is None:
             print(f"Skipping processing of '{filename}' due to file renaming error.")
             continue
 
         # 4. Extract and transform data, applying comments from the mapping
-        extracted_data = extract_data(df, mapping=mapping)
+        # Pass both mappings and the data_type_prefix for conditional mapping logic inside extract_data
+        extracted_data = extract_data(df, mtm_mapping=mtm_mapping, notional_mapping=notional_mapping, data_type_prefix=file_prefix)
         if extracted_data is None or extracted_data.empty:
             print(f"No valid data extracted from '{new_filename}' for {file_prefix} data. Skipping.")
             continue
 
         # 5. Write extracted data to the Excel sheet
-        # Check if this is the first file processed for this data_sheet_name in this run,
-        # if so, write headers. If multiple CSVs contribute to the same sheet, this logic
-        # might need adjustment (e.g., append data without re-writing headers).
-        # Currently, it clears and rewrites for each processed file from the loop,
-        # which means only the last processed CSV's data will remain if multiple CSVs
-        # are in the same folder and point to the same data_sheet_name.
-        # Assuming one relevant CSV per run for each type of data.
-
         # Write headers to the sheet
         headers = extracted_data.columns.tolist()
         for col_idx, header in enumerate(headers, 1):
             sheet.cell(row=1, column=col_idx, value=header)
 
         # Write data rows, starting from row 2 (after headers)
-        # openpyxl's dataframe_to_rows provides values suitable for direct writing.
         for row_idx, row_data in enumerate(dataframe_to_rows(extracted_data, index=False, header=False), 2):
             for col_idx, cell_value in enumerate(row_data, 1):
-                # Attempt to convert to float for specific columns if they contain comma separators
-                # This logic was in the user's original snippet inside the cell loop,
-                # but it's generally better to clean numbers in the DataFrame itself.
-                # However, if there are persistent issues with string-to-number conversion
-                # on writing, this block can be re-enabled and adjusted.
-                # For now, assuming `extracted_data` has correct types from `read_csv_with_encoding`.
                 sheet.cell(row=row_idx, column=col_idx, value=cell_value)
         
         print(f"Successfully wrote data from '{new_filename}' to sheet '{data_sheet_name}'.")
@@ -392,14 +396,19 @@ def main():
         # Load the copied workbook for modifications.
         wb = openpyxl.load_workbook(summary_path)
 
+        # --- Extract mappings once at the beginning ---
+        mtm_mapping = extract_mapping_from_sheet(wb, sheet_name="MTM_Mapping")
+        notional_mapping = extract_mapping_from_sheet(wb, sheet_name="Notional_Mapping")
+        
         # --- Process MTM Data ---
         mtm_success = process_data_and_update_excel(
             folder_path=mtm_folder_path,
             file_prefix="mtm",
             data_sheet_name="Mtm Single Sheet In FOW",
-            mapping_sheet_name="MTM_Mapping",
             pivot_sheet_name="Pivot",
-            wb=wb
+            wb=wb,
+            mtm_mapping=mtm_mapping,
+            notional_mapping=notional_mapping # Pass both mappings
         )
 
         # --- Process Notional Data ---
@@ -407,9 +416,10 @@ def main():
             folder_path=notional_folder_path,
             file_prefix="notional",
             data_sheet_name="Notional Data Sheet", # Ensure this sheet exists or will be created
-            mapping_sheet_name="Notional_Mapping",  # Ensure this sheet exists
             pivot_sheet_name="Notional Pivot",      # Ensure this pivot table exists
-            wb=wb
+            wb=wb,
+            mtm_mapping=mtm_mapping, # Pass both mappings
+            notional_mapping=notional_mapping
         )
         
         # After processing both MTM and Notional data, remove the mapping sheets
